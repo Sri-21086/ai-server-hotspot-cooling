@@ -2,3 +2,4 @@ streamlit
 paho-mqtt==2.1.0
 pandas
 scikit-learn
+plotly
