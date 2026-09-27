@@ -326,7 +326,7 @@ def load_datasets():
 
     if len(files) != 5:
         raise RuntimeError(
-            f"Expected 5 CSV files, but found {len(files)}: {files}"
+            f"Expected 5 CSV files, but found {len(files)}"
         )
 
     datasets = []
@@ -334,13 +334,22 @@ def load_datasets():
     for file in files:
         df = pd.read_csv(file)
 
-        # Remove accidental whitespace from column names
-        df.columns = df.columns.astype(str).str.strip()
+        # Clean column names
+        df.columns = (
+            df.columns
+            .astype(str)
+            .str.replace("\ufeff", "", regex=False)
+            .str.strip()
+        )
 
-        # Some CSV versions may contain an unnamed index column
-        unnamed = [c for c in df.columns if c.lower().startswith("unnamed")]
-        if unnamed:
-            df = df.drop(columns=unnamed)
+        # Remove accidental unnamed/index columns
+        drop_cols = [
+            col for col in df.columns
+            if col.lower().startswith("unnamed")
+        ]
+
+        if drop_cols:
+            df = df.drop(columns=drop_cols)
 
         datasets.append(df)
 
@@ -696,19 +705,97 @@ mqtt_state = get_mqtt_state()
 
 @st.cache_resource
 def train_models():
+
     df1, df2, df3, df4, df5 = load_datasets()
 
-    # Make absolutely sure all required columns exist
-    for i, df in enumerate([df1, df2, df3, df4, df5], start=1):
-        missing = [col for col in FEATURES if col not in df.columns]
+    # -------------------------------------------------
+    # Check and clean every dataset
+    # -------------------------------------------------
 
-        if missing:
-            raise KeyError(
-                f"Model {i} is missing columns: {missing}. "
-                f"Actual columns are: {list(df.columns)}"
+    datasets = [df1, df2, df3, df4, df5]
+
+    targets = [
+        "future_GPU_temperature_C",
+        "required_fan_speed_percent",
+        "hotspot_risk_percent",
+        "cooling_effectiveness_percent",
+        "overheating_warning",
+    ]
+
+    for i, (df, target) in enumerate(
+        zip(datasets, targets), start=1
+    ):
+
+        # Normalize column names again
+        df.columns = (
+            df.columns
+            .astype(str)
+            .str.replace("\ufeff", "", regex=False)
+            .str.strip()
+        )
+
+        # Convert all expected feature columns to numeric
+        for feature in FEATURES:
+            if feature in df.columns:
+                df[feature] = pd.to_numeric(
+                    df[feature],
+                    errors="coerce"
+                )
+
+        # Convert target to numeric
+        if target in df.columns:
+            df[target] = pd.to_numeric(
+                df[target],
+                errors="coerce"
             )
 
-    # ---------------- MODEL 1 ----------------
+        # Check features
+        missing_features = [
+            feature
+            for feature in FEATURES
+            if feature not in df.columns
+        ]
+
+        if missing_features:
+            st.error(
+                f"Model {i} CSV does not contain the required columns."
+            )
+
+            st.write(
+                "Required feature columns:"
+            )
+            st.write(FEATURES)
+
+            st.write(
+                "Columns actually found in this CSV:"
+            )
+            st.write(list(df.columns))
+
+            st.stop()
+
+        # Check target
+        if target not in df.columns:
+            st.error(
+                f"Model {i} is missing target column: {target}"
+            )
+
+            st.write(
+                "Columns actually found:"
+            )
+            st.write(list(df.columns))
+
+            st.stop()
+
+        # Remove invalid rows
+        df.dropna(
+            subset=FEATURES + [target],
+            inplace=True
+        )
+
+    # -------------------------------------------------
+    # MODEL 1
+    # -------------------------------------------------
+
     X1 = df1[FEATURES]
     y1 = df1["future_GPU_temperature_C"]
 
@@ -717,9 +804,13 @@ def train_models():
         random_state=42,
         n_jobs=-1
     )
+
     model1.fit(X1, y1)
 
-    # ---------------- MODEL 2 ----------------
+    # -------------------------------------------------
+    # MODEL 2
+    # -------------------------------------------------
+
     X2 = df2[FEATURES]
     y2 = df2["required_fan_speed_percent"]
 
@@ -728,9 +819,13 @@ def train_models():
         random_state=42,
         n_jobs=-1
     )
+
     model2.fit(X2, y2)
 
-    # ---------------- MODEL 3 ----------------
+    # -------------------------------------------------
+    # MODEL 3
+    # -------------------------------------------------
+
     X3 = df3[FEATURES]
     y3 = df3["hotspot_risk_percent"]
 
@@ -739,9 +834,13 @@ def train_models():
         random_state=42,
         n_jobs=-1
     )
+
     model3.fit(X3, y3)
 
-    # ---------------- MODEL 4 ----------------
+    # -------------------------------------------------
+    # MODEL 4
+    # -------------------------------------------------
+
     X4 = df4[FEATURES]
     y4 = df4["cooling_effectiveness_percent"]
 
@@ -750,9 +849,13 @@ def train_models():
         random_state=42,
         n_jobs=-1
     )
+
     model4.fit(X4, y4)
 
-    # ---------------- MODEL 5 ----------------
+    # -------------------------------------------------
+    # MODEL 5
+    # -------------------------------------------------
+
     X5 = df5[FEATURES]
     y5 = df5["overheating_warning"]
 
@@ -761,6 +864,7 @@ def train_models():
         random_state=42,
         n_jobs=-1
     )
+
     model5.fit(X5, y5)
 
     return {
@@ -770,7 +874,6 @@ def train_models():
         "model4": model4,
         "model5": model5,
     }
-
 # ============================================================
 # TRAIN
 # ============================================================
