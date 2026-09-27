@@ -13,7 +13,7 @@ st.set_page_config(
     layout="wide"
 )
 
-BASE = Path(_file_).resolve().parent
+BASE = Path(__file__).resolve().parent
 
 MODEL_FILES = {
     1: "server_cooling_model1_1000_rows.csv",
