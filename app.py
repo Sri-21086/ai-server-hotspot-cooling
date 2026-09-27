@@ -322,27 +322,29 @@ def prepare_datasets():
 
 @st.cache_data
 def load_datasets():
-
     files = prepare_datasets()
 
-    df1 = pd.read_csv(files[0])
+    if len(files) != 5:
+        raise RuntimeError(
+            f"Expected 5 CSV files, but found {len(files)}: {files}"
+        )
 
-    df2 = pd.read_csv(files[1])
+    datasets = []
 
-    df3 = pd.read_csv(files[2])
+    for file in files:
+        df = pd.read_csv(file)
 
-    df4 = pd.read_csv(files[3])
+        # Remove accidental whitespace from column names
+        df.columns = df.columns.astype(str).str.strip()
 
-    df5 = pd.read_csv(files[4])
+        # Some CSV versions may contain an unnamed index column
+        unnamed = [c for c in df.columns if c.lower().startswith("unnamed")]
+        if unnamed:
+            df = df.drop(columns=unnamed)
 
-    return (
-        df1,
-        df2,
-        df3,
-        df4,
-        df5
-    )
+        datasets.append(df)
 
+    return datasets
 
 # ============================================================
 # MQTT STATE
@@ -694,333 +696,80 @@ mqtt_state = get_mqtt_state()
 
 @st.cache_resource
 def train_models():
+    df1, df2, df3, df4, df5 = load_datasets()
 
-    (
-        df1,
-        df2,
-        df3,
-        df4,
-        df5
-    ) = load_datasets()
+    # Make absolutely sure all required columns exist
+    for i, df in enumerate([df1, df2, df3, df4, df5], start=1):
+        missing = [col for col in FEATURES if col not in df.columns]
 
+        if missing:
+            raise KeyError(
+                f"Model {i} is missing columns: {missing}. "
+                f"Actual columns are: {list(df.columns)}"
+            )
 
-    models = {}
-
-
-    # ========================================================
-    # MODEL 1
-    # FUTURE GPU TEMPERATURE
-    # ========================================================
-
+    # ---------------- MODEL 1 ----------------
     X1 = df1[FEATURES]
-
-    y1 = df1[
-        "future_GPU_temperature_C"
-    ]
-
-
-    X1_train, X1_test, y1_train, y1_test = (
-        train_test_split(
-            X1,
-            y1,
-            test_size=0.2,
-            random_state=42
-        )
-    )
-
+    y1 = df1["future_GPU_temperature_C"]
 
     model1 = RandomForestRegressor(
-
         n_estimators=150,
-
         random_state=42,
-
         n_jobs=-1
-
     )
+    model1.fit(X1, y1)
 
-
-    model1.fit(
-        X1_train,
-        y1_train
-    )
-
-
-    pred1 = model1.predict(
-        X1_test
-    )
-
-
-    models["model1"] = model1
-
-
-    models["model1_metrics"] = {
-
-        "R2":
-        r2_score(
-            y1_test,
-            pred1
-        ),
-
-        "MAE":
-        mean_absolute_error(
-            y1_test,
-            pred1
-        ),
-
-        "RMSE":
-        mean_squared_error(
-            y1_test,
-            pred1
-        ) ** 0.5
-
-    }
-
-
-    # ========================================================
-    # MODEL 2
-    # REQUIRED FAN SPEED
-    # ========================================================
-
+    # ---------------- MODEL 2 ----------------
     X2 = df2[FEATURES]
-
-    y2 = df2[
-        "required_fan_speed_percent"
-    ]
-
-
-    X2_train, X2_test, y2_train, y2_test = (
-        train_test_split(
-            X2,
-            y2,
-            test_size=0.2,
-            random_state=42
-        )
-    )
-
+    y2 = df2["required_fan_speed_percent"]
 
     model2 = RandomForestRegressor(
-
         n_estimators=150,
-
         random_state=42,
-
         n_jobs=-1
-
     )
+    model2.fit(X2, y2)
 
-
-    model2.fit(
-        X2_train,
-        y2_train
-    )
-
-
-    pred2 = model2.predict(
-        X2_test
-    )
-
-
-    models["model2"] = model2
-
-
-    models["model2_metrics"] = {
-
-        "R2":
-        r2_score(
-            y2_test,
-            pred2
-        ),
-
-        "MAE":
-        mean_absolute_error(
-            y2_test,
-            pred2
-        ),
-
-        "RMSE":
-        mean_squared_error(
-            y2_test,
-            pred2
-        ) ** 0.5
-
-    }
-
-
-    # ========================================================
-    # MODEL 3
-    # HOTSPOT RISK
-    # ========================================================
-
+    # ---------------- MODEL 3 ----------------
     X3 = df3[FEATURES]
-
-    y3 = df3[
-        "hotspot_risk_percent"
-    ]
-
-
-    X3_train, X3_test, y3_train, y3_test = (
-        train_test_split(
-            X3,
-            y3,
-            test_size=0.2,
-            random_state=42
-        )
-    )
-
+    y3 = df3["hotspot_risk_percent"]
 
     model3 = RandomForestRegressor(
-
         n_estimators=150,
-
         random_state=42,
-
         n_jobs=-1
-
     )
+    model3.fit(X3, y3)
 
-
-    model3.fit(
-        X3_train,
-        y3_train
-    )
-
-
-    pred3 = model3.predict(
-        X3_test
-    )
-
-
-    models["model3"] = model3
-
-
-    models["model3_metrics"] = {
-
-        "R2":
-        r2_score(
-            y3_test,
-            pred3
-        ),
-
-        "MAE":
-        mean_absolute_error(
-            y3_test,
-            pred3
-        ),
-
-        "RMSE":
-        mean_squared_error(
-            y3_test,
-            pred3
-        ) ** 0.5
-
-    }
-
-
-    # ========================================================
-    # MODEL 4
-    # COOLING EFFECTIVENESS
-    # ========================================================
-
+    # ---------------- MODEL 4 ----------------
     X4 = df4[FEATURES]
-
-    y4 = df4[
-        "cooling_effectiveness_percent"
-    ]
-
-
-    X4_train, X4_test, y4_train, y4_test = (
-        train_test_split(
-            X4,
-            y4,
-            test_size=0.2,
-            random_state=42
-        )
-    )
-
+    y4 = df4["cooling_effectiveness_percent"]
 
     model4 = RandomForestRegressor(
-
         n_estimators=150,
-
         random_state=42,
-
         n_jobs=-1
-
     )
+    model4.fit(X4, y4)
 
-
-    model4.fit(
-        X4_train,
-        y4_train
-    )
-
-
-    pred4 = model4.predict(
-        X4_test
-    )
-
-
-    models["model4"] = model4
-
-
-    models["model4_metrics"] = {
-
-        "R2":
-        r2_score(
-            y4_test,
-            pred4
-        ),
-
-        "MAE":
-        mean_absolute_error(
-            y4_test,
-            pred4
-        ),
-
-        "RMSE":
-        mean_squared_error(
-            y4_test,
-            pred4
-        ) ** 0.5
-
-    }
-
-
-    # ========================================================
-    # MODEL 5
-    # OVERHEATING WARNING
-    # ========================================================
-
+    # ---------------- MODEL 5 ----------------
     X5 = df5[FEATURES]
-
-    y5 = df5[
-        "overheating_warning"
-    ].astype(int)
-
+    y5 = df5["overheating_warning"]
 
     model5 = RandomForestClassifier(
-
         n_estimators=150,
-
         random_state=42,
-
         n_jobs=-1
-
     )
+    model5.fit(X5, y5)
 
-
-    model5.fit(
-        X5,
-        y5
-    )
-
-
-    models["model5"] = model5
-
-
-    return models
-
+    return {
+        "model1": model1,
+        "model2": model2,
+        "model3": model3,
+        "model4": model4,
+        "model5": model5,
+    }
 
 # ============================================================
 # TRAIN
