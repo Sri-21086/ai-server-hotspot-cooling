@@ -145,35 +145,7 @@ WARNING_TEMP = 40.0
 CRITICAL_TEMP = 50.0
 
 
-# ============================================================
-# MODEL FEATURES
-# ============================================================
 
-FEATURES = [
-
-    "GPU_usage_percent",
-
-    "GPU_power_W",
-
-    "CPU_usage_percent",
-
-    "CPU_temperature_C",
-
-    "GPU_temperature_C",
-
-    "ambient_temperature_C",
-
-    "inlet_temperature_C",
-
-    "outlet_temperature_C",
-
-    "fan_speed_percent",
-
-    "airflow_m3_s",
-
-    "workload_percent"
-
-]
 
 
 # ============================================================
@@ -213,20 +185,16 @@ def prepare_datasets():
     found_files = {}
 
     for file in DATA_DIR.rglob("*.csv"):
-
         found_files[file.name] = file
-
 
     if all(
         name in found_files
         for name in CSV_NAMES
     ):
-
         return [
             found_files[name]
             for name in CSV_NAMES
         ]
-
 
     # --------------------------------------------------------
     # Check ZIP
@@ -235,21 +203,13 @@ def prepare_datasets():
     if not ZIP_FILE.exists():
 
         raise FileNotFoundError(
-
             "\nDataset ZIP file was not found.\n\n"
-
             f"Expected:\n{ZIP_FILE}\n\n"
-
             "Your GitHub repository must contain:\n"
-
             "app.py\n"
-
             "requirements.txt\n"
-
             "server_cooling_5_models_1000_rows.zip"
-
         )
-
 
     # --------------------------------------------------------
     # Extract ZIP
@@ -262,9 +222,7 @@ def prepare_datasets():
             "r"
         ) as zip_ref:
 
-            zip_ref.extractall(
-                DATA_DIR
-            )
+            zip_ref.extractall(DATA_DIR)
 
     except zipfile.BadZipFile:
 
@@ -273,7 +231,6 @@ def prepare_datasets():
             "is not a valid ZIP file."
         )
 
-
     # --------------------------------------------------------
     # Search recursively
     # --------------------------------------------------------
@@ -281,38 +238,28 @@ def prepare_datasets():
     found_files = {}
 
     for file in DATA_DIR.rglob("*.csv"):
-
         found_files[file.name] = file
 
-
     missing = [
-
         name
-
         for name in CSV_NAMES
-
         if name not in found_files
-
     ]
-
 
     if missing:
 
         raise FileNotFoundError(
-
             "These CSV files were not found inside the ZIP:\n\n"
-
             + "\n".join(missing)
-
         )
 
+    # --------------------------------------------------------
+    # Return files in exact Model 1 → Model 5 order
+    # --------------------------------------------------------
 
     return [
-
         found_files[name]
-
         for name in CSV_NAMES
-
     ]
 
 
@@ -322,6 +269,7 @@ def prepare_datasets():
 
 @st.cache_data
 def load_datasets():
+
     files = prepare_datasets()
 
     if len(files) != 5:
@@ -329,32 +277,17 @@ def load_datasets():
             f"Expected 5 CSV files, but found {len(files)}"
         )
 
-    datasets = []
+    df1 = pd.read_csv(files[0])
+    df2 = pd.read_csv(files[1])
+    df3 = pd.read_csv(files[2])
+    df4 = pd.read_csv(files[3])
+    df5 = pd.read_csv(files[4])
 
-    for file in files:
-        df = pd.read_csv(file)
+    # Remove accidental whitespace from column names
+    for df in [df1, df2, df3, df4, df5]:
+        df.columns = df.columns.astype(str).str.strip()
 
-        # Clean column names
-        df.columns = (
-            df.columns
-            .astype(str)
-            .str.replace("\ufeff", "", regex=False)
-            .str.strip()
-        )
-
-        # Remove accidental unnamed/index columns
-        drop_cols = [
-            col for col in df.columns
-            if col.lower().startswith("unnamed")
-        ]
-
-        if drop_cols:
-            df = df.drop(columns=drop_cols)
-
-        datasets.append(df)
-
-    return datasets
-
+    return df1, df2, df3, df4, df5
 # ============================================================
 # MQTT STATE
 # ============================================================
@@ -708,96 +641,24 @@ def train_models():
 
     df1, df2, df3, df4, df5 = load_datasets()
 
-    # -------------------------------------------------
-    # Check and clean every dataset
-    # -------------------------------------------------
+    # =========================================================
+    # MODEL 1
+    # Future Temperature
+    # =========================================================
 
-    datasets = [df1, df2, df3, df4, df5]
-
-    targets = [
-        "future_GPU_temperature_C",
-        "required_fan_speed_percent",
-        "hotspot_risk_percent",
-        "cooling_effectiveness_percent",
-        "overheating_warning",
+    features1 = [
+        "Ambient Temperature C",
+        "Current GPU Temperature C",
+        "CPU Temperature C",
+        "Server Load Percent",
+        "Humidity Percent",
+        "Current Fan Speed Percent"
     ]
 
-    for i, (df, target) in enumerate(
-        zip(datasets, targets), start=1
-    ):
+    target1 = "Future Temperature C"
 
-        # Normalize column names again
-        df.columns = (
-            df.columns
-            .astype(str)
-            .str.replace("\ufeff", "", regex=False)
-            .str.strip()
-        )
-
-        # Convert all expected feature columns to numeric
-        for feature in FEATURES:
-            if feature in df.columns:
-                df[feature] = pd.to_numeric(
-                    df[feature],
-                    errors="coerce"
-                )
-
-        # Convert target to numeric
-        if target in df.columns:
-            df[target] = pd.to_numeric(
-                df[target],
-                errors="coerce"
-            )
-
-        # Check features
-        missing_features = [
-            feature
-            for feature in FEATURES
-            if feature not in df.columns
-        ]
-
-        if missing_features:
-            st.error(
-                f"Model {i} CSV does not contain the required columns."
-            )
-
-            st.write(
-                "Required feature columns:"
-            )
-            st.write(FEATURES)
-
-            st.write(
-                "Columns actually found in this CSV:"
-            )
-            st.write(list(df.columns))
-
-            st.stop()
-
-        # Check target
-        if target not in df.columns:
-            st.error(
-                f"Model {i} is missing target column: {target}"
-            )
-
-            st.write(
-                "Columns actually found:"
-            )
-            st.write(list(df.columns))
-
-            st.stop()
-
-        # Remove invalid rows
-        df.dropna(
-            subset=FEATURES + [target],
-            inplace=True
-        )
-
-    # -------------------------------------------------
-    # MODEL 1
-    # -------------------------------------------------
-
-    X1 = df1[FEATURES]
-    y1 = df1["future_GPU_temperature_C"]
+    X1 = df1[features1]
+    y1 = df1[target1]
 
     model1 = RandomForestRegressor(
         n_estimators=150,
@@ -807,12 +668,25 @@ def train_models():
 
     model1.fit(X1, y1)
 
-    # -------------------------------------------------
-    # MODEL 2
-    # -------------------------------------------------
 
-    X2 = df2[FEATURES]
-    y2 = df2["required_fan_speed_percent"]
+    # =========================================================
+    # MODEL 2
+    # Required Fan Speed
+    # =========================================================
+
+    features2 = [
+        "Ambient Temperature C",
+        "Current GPU Temperature C",
+        "CPU Temperature C",
+        "Server Load Percent",
+        "Humidity Percent",
+        "Current Fan Speed Percent"
+    ]
+
+    target2 = "Required Fan Speed Percent"
+
+    X2 = df2[features2]
+    y2 = df2[target2]
 
     model2 = RandomForestRegressor(
         n_estimators=150,
@@ -822,12 +696,25 @@ def train_models():
 
     model2.fit(X2, y2)
 
-    # -------------------------------------------------
-    # MODEL 3
-    # -------------------------------------------------
 
-    X3 = df3[FEATURES]
-    y3 = df3["hotspot_risk_percent"]
+    # =========================================================
+    # MODEL 3
+    # Hotspot Risk
+    # =========================================================
+
+    features3 = [
+        "Ambient Temperature C",
+        "Current GPU Temperature C",
+        "CPU Temperature C",
+        "Server Load Percent",
+        "Current Fan Speed Percent",
+        "Temperature Rise C"
+    ]
+
+    target3 = "Hotspot Risk"
+
+    X3 = df3[features3]
+    y3 = df3[target3]
 
     model3 = RandomForestRegressor(
         n_estimators=150,
@@ -837,12 +724,25 @@ def train_models():
 
     model3.fit(X3, y3)
 
-    # -------------------------------------------------
-    # MODEL 4
-    # -------------------------------------------------
 
-    X4 = df4[FEATURES]
-    y4 = df4["cooling_effectiveness_percent"]
+    # =========================================================
+    # MODEL 4
+    # Cooling Effectiveness
+    # =========================================================
+
+    features4 = [
+        "Ambient Temperature C",
+        "Current GPU Temperature C",
+        "CPU Temperature C",
+        "Server Load Percent",
+        "Fan Speed Percent",
+        "Temperature Before Cooling C"
+    ]
+
+    target4 = "Cooling Effectiveness Percent"
+
+    X4 = df4[features4]
+    y4 = df4[target4]
 
     model4 = RandomForestRegressor(
         n_estimators=150,
@@ -852,12 +752,33 @@ def train_models():
 
     model4.fit(X4, y4)
 
-    # -------------------------------------------------
-    # MODEL 5
-    # -------------------------------------------------
 
-    X5 = df5[FEATURES]
-    y5 = df5["overheating_warning"]
+    # =========================================================
+    # MODEL 5
+    # Overheating Warning
+    # =========================================================
+
+    features5 = [
+        "Ambient Temperature C",
+        "Current GPU Temperature C",
+        "CPU Temperature C",
+        "Server Load Percent",
+        "Fan Speed Percent",
+        "Hotspot Risk"
+    ]
+
+    target5 = "Overheating Warning"
+
+    X5 = df5[features5]
+    y5 = df5[target5]
+
+    # Make sure classification target is numeric
+    y5 = pd.to_numeric(y5, errors="coerce")
+
+    valid = y5.notna()
+
+    X5 = X5.loc[valid]
+    y5 = y5.loc[valid]
 
     model5 = RandomForestClassifier(
         n_estimators=150,
@@ -865,14 +786,19 @@ def train_models():
         n_jobs=-1
     )
 
-    model5.fit(X5, y5)
+    model5.fit(X5, y5.astype(int))
+
+
+    # =========================================================
+    # RETURN ALL MODELS
+    # =========================================================
 
     return {
         "model1": model1,
         "model2": model2,
         "model3": model3,
         "model4": model4,
-        "model5": model5,
+        "model5": model5
     }
 # ============================================================
 # TRAIN
