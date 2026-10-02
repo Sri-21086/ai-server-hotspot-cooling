@@ -379,15 +379,20 @@ def load_datasets():
 # ============================================================
 
 class MQTTState:
+    """Persistent MQTT listener that stays alive across Streamlit reruns."""
+
     def __init__(self):
         self.lock = threading.RLock()
         self.connected = False
+        self.connecting = False
+        self.desired_connection = False
         self.latest_data = None
         self.last_update = None
         self.message_count = 0
         self.connection_error = None
         self.last_payload = ""
-        self.running = False
+        self.stop_event = threading.Event()
+        self.worker_thread = None
 
         client_id = "STREAMLIT-" + uuid.uuid4().hex[:12]
 
@@ -396,59 +401,51 @@ class MQTTState:
             client_id=client_id,
             transport="websockets",
         )
-
         self.client.ws_set_options(path="/mqtt")
+        self.client.reconnect_delay_set(min_delay=2, max_delay=15)
 
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
         self.client.on_disconnect = self.on_disconnect
 
-        # Public broker reconnect settings.
-        self.client.reconnect_delay_set(min_delay=2, max_delay=20)
-
     def on_connect(self, client, userdata, flags, reason_code, properties):
         print("MQTT connection result:", reason_code)
-
         if reason_code == 0:
             with self.lock:
                 self.connected = True
+                self.connecting = False
                 self.connection_error = None
-                self.running = True
 
             result = client.subscribe(MQTT_TOPIC, qos=0)
             print("Subscribed:", MQTT_TOPIC, result)
-
         else:
             with self.lock:
                 self.connected = False
+                self.connecting = False
                 self.connection_error = f"MQTT connection refused: {reason_code}"
 
     def on_message(self, client, userdata, msg):
         try:
             payload = msg.payload.decode("utf-8", errors="replace")
             data = json.loads(payload)
+            servers = data.get("servers")
 
-            if "servers" not in data:
+            if not isinstance(servers, list) or not servers:
                 return
 
-            servers = data.get("servers", [])
-
-            if not isinstance(servers, list):
-                return
-
-            # Normalize server count while preserving the incoming values.
+            received_at = time.time()
             with self.lock:
                 self.latest_data = data
                 self.last_payload = payload
-                self.last_update = time.time()
+                self.last_update = received_at
                 self.message_count += 1
                 self.connected = True
+                self.connection_error = None
 
             print(
                 f"MQTT LIVE MESSAGE #{self.message_count}: "
-                f"{len(servers)} servers"
+                f"{len(servers)} servers received"
             )
-
         except Exception as exc:
             print("MQTT message processing error:", exc)
 
@@ -462,62 +459,100 @@ class MQTTState:
     ):
         with self.lock:
             self.connected = False
+            if self.desired_connection and not self.stop_event.is_set():
+                self.connecting = True
 
         print("MQTT disconnected:", reason_code)
 
-    def connect(self):
-        try:
-            if self.client.is_connected():
+    def _worker(self):
+        """Keep the MQTT connection alive independently of Streamlit reruns."""
+        while not self.stop_event.is_set():
+            with self.lock:
+                desired = self.desired_connection
+
+            if not desired:
+                time.sleep(0.5)
+                continue
+
+            try:
                 with self.lock:
-                    self.connected = True
-                    self.running = True
+                    self.connecting = True
+                    self.connection_error = None
+
+                # loop_forever() maintains the network loop and handles
+                # normal reconnects. It returns when the client disconnects.
+                self.client.connect(
+                    MQTT_BROKER,
+                    MQTT_WEBSOCKET_PORT,
+                    keepalive=60,
+                )
+                self.client.loop_forever(retry_first_connection=True)
+
+            except Exception as exc:
+                with self.lock:
+                    self.connected = False
+                    self.connecting = False
+                    self.connection_error = str(exc)
+
+                # Do not hammer the public broker after a transient failure.
+                time.sleep(2)
+
+            with self.lock:
+                should_continue = self.desired_connection
+
+            if should_continue and not self.stop_event.is_set():
+                time.sleep(0.5)
+
+        with self.lock:
+            self.connected = False
+            self.connecting = False
+
+    def connect(self):
+        with self.lock:
+            self.desired_connection = True
+            self.stop_event.clear()
+
+            if self.worker_thread is not None and self.worker_thread.is_alive():
                 return True
 
-            # Do not create a new client for every refresh.
-            self.client.connect(
-                MQTT_BROKER,
-                MQTT_WEBSOCKET_PORT,
-                keepalive=60,
+            self.worker_thread = threading.Thread(
+                target=self._worker,
+                name="mqtt-background-listener",
+                daemon=True,
             )
+            self.worker_thread.start()
 
-            # One background network loop remains active continuously.
-            if not self.running:
-                self.client.loop_start()
-
-            with self.lock:
-                self.running = True
-
-            return True
-
-        except Exception as exc:
-            with self.lock:
-                self.connected = False
-                self.connection_error = str(exc)
-
-            return False
+        return True
 
     def disconnect(self):
+        with self.lock:
+            self.desired_connection = False
+            self.stop_event.set()
+            self.connected = False
+            self.connecting = False
+
         try:
-            self.client.loop_stop()
             self.client.disconnect()
         except Exception:
             pass
 
-        with self.lock:
-            self.connected = False
-            self.running = False
+        thread = self.worker_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=2.0)
 
     def get_data(self):
         with self.lock:
             if self.latest_data is None:
                 return None
-
-            # Return a copy so the UI never reads a half-updated object.
             return json.loads(json.dumps(self.latest_data))
 
     def is_connected(self):
         with self.lock:
             return self.connected
+
+    def is_connecting(self):
+        with self.lock:
+            return self.connecting
 
     def get_last_update(self):
         with self.lock:
@@ -542,6 +577,9 @@ def get_mqtt_state():
 
 
 mqtt_state = get_mqtt_state()
+# Start the persistent MQTT listener automatically. The CONNECT button below
+# remains available to restart it after a manual disconnect.
+mqtt_state.connect()
 
 
 # ============================================================
@@ -1034,28 +1072,27 @@ with st.sidebar:
 
     st.divider()
 
-    if not mqtt_state.is_connected():
-        if st.button("🔌 CONNECT", use_container_width=True):
-            if mqtt_state.connect():
-                st.success("MQTT listener started.")
-                st.rerun()
-            else:
-                st.error("Could not connect to MQTT.")
+    # Keep the control visible at all times. The listener also auto-starts
+    # so the dashboard does not depend on a single button click.
+    if st.button("🔌 CONNECT / RECONNECT", use_container_width=True):
+        mqtt_state.connect()
+        st.rerun()
 
-    else:
-        if st.button("🔴 DISCONNECT", use_container_width=True):
-            mqtt_state.disconnect()
-            st.rerun()
+    if st.button("🔴 DISCONNECT", use_container_width=True):
+        mqtt_state.disconnect()
+        st.rerun()
 
     if mqtt_state.is_connected():
-        st.success("🟢 MQTT CONNECTED")
+        st.success("🟢 MQTT CONNECTED — listening continuously")
+    elif mqtt_state.is_connecting():
+        st.info("🔄 MQTT CONNECTING / RECONNECTING…")
     else:
         st.warning("🟡 MQTT NOT CONNECTED")
 
     st.divider()
 
     st.write("Servers: 4")
-    st.write("UI refresh: 2 seconds")
+    st.write("UI refresh: 1 second")
     st.write("MQTT listener: continuous")
 
     st.divider()
@@ -1130,7 +1167,7 @@ if model_error:
 # LIVE DASHBOARD
 # ============================================================
 
-@st.fragment(run_every=2)
+@st.fragment(run_every=1)
 def realtime_dashboard():
 
     data = mqtt_state.get_data()
@@ -1156,17 +1193,30 @@ def realtime_dashboard():
     # --------------------------------------------------------
 
     last_update = mqtt_state.get_last_update()
-    age = time.time() - last_update if last_update else 999
+    age = time.time() - last_update if last_update else None
+    msg_count = mqtt_state.get_message_count()
 
-    if age <= 5:
-        live_text = "🟢 LIVE — Wokwi data updating continuously"
-    elif age <= 15:
-        live_text = f"🟡 LIVE CONNECTION — last value {age:.1f}s ago"
+    if mqtt_state.is_connected() and age is not None and age <= 10:
+        live_text = (
+            f"🟢 LIVE — MQTT is receiving Wokwi data continuously "
+            f"(packet #{msg_count}, {age:.1f}s ago)"
+        )
+        live_class = "live-dot"
+    elif mqtt_state.is_connecting():
+        live_text = "🔄 CONNECTING — waiting for MQTT packets from Wokwi"
+        live_class = "live-dot"
+    elif age is not None:
+        live_text = (
+            f"🔴 STALE DATA — website has not received a new MQTT packet "
+            f"for {age:.0f}s (UI refresh is still running every 1s)"
+        )
+        live_class = "off-dot"
     else:
-        live_text = f"🔴 STALE DATA — last value {age:.1f}s ago"
+        live_text = "🟡 WAITING — no MQTT packet has reached the website yet"
+        live_class = "off-dot"
 
     st.markdown(
-        f'<div class="small-note"><span class="live-dot">{live_text}</span></div>',
+        f'<div class="small-note"><span class="{live_class}">{live_text}</span></div>',
         unsafe_allow_html=True,
     )
 
@@ -1259,79 +1309,8 @@ def realtime_dashboard():
         )
 
         with columns[index]:
-            st.markdown(
-                f"""
-<div class="server-card">
-
-<div class="server-header">
-    <div>
-        <div class="server-title">🖥️ Server {sid:02d}</div>
-        <div class="server-rack">Rack A-{sid:02d}</div>
-    </div>
-    <div>
-        <span class="badge {badge_class}">◉ {status}</span><br>
-        <span class="badge badge-blue" style="margin-top:6px;">
-            {'❄ COOLING ON' if cooling else '❄ COOLING OFF'}
-        </span>
-    </div>
-</div>
-
-<div class="temp-panel">
-    <div class="temp-grid">
-        <div>
-            <div class="temp-label">🌡 Current GPU</div>
-            <div class="temp-value">{temp:.1f}°C</div>
-            <div class="delta">~ {delta:+.1f}°C vs prev</div>
-        </div>
-
-        <div>
-            <div class="temp-label">✣ AI Next Pred</div>
-            <div class="pred-value">{predicted:.2f}°C</div>
-            <div class="delta">Threshold {SAFE_TEMP:.0f}°C</div>
-        </div>
-    </div>
-
-    <div class="gauge">
-        <div class="gauge-marker" style="left:{marker:.1f}%"></div>
-    </div>
-
-    <div class="gauge-labels">
-        <span>20°C</span>
-        <span>35°C threshold</span>
-        <span>50°C</span>
-    </div>
-</div>
-
-<div class="info-grid">
-    <div class="info-box">
-        <div class="info-label">Previous Temperature</div>
-        <div class="info-value">{previous:.1f}°C</div>
-    </div>
-
-    <div class="info-box">
-        <div class="info-label">Thermal Gauge</div>
-        <div class="info-value">{temp:.1f}°C / 50°C</div>
-    </div>
-
-    <div class="info-box">
-        <div class="info-label">Hardware</div>
-        <div class="info-value">{status}</div>
-    </div>
-
-    <div class="info-box">
-        <div class="info-label">Thermal Stress</div>
-        <div class="info-value">{stress}</div>
-    </div>
-</div>
-
-<div class="formula-box">
-AI: 0.8694 − (0.0371 × previous) + (1.0082 × current)
-</div>
-
-</div>
-""",
-                unsafe_allow_html=True,
-            )
+            card_html = f"""<div class=\"server-card\"><div class=\"server-header\"><div><div class=\"server-title\">🖥️ Server {sid:02d}</div><div class=\"server-rack\">Rack A-{sid:02d}</div></div><div><span class=\"badge {badge_class}\">◉ {status}</span><br><span class=\"badge badge-blue\" style=\"margin-top:6px;\">{'❄ COOLING ON' if cooling else '❄ COOLING OFF'}</span></div></div><div class=\"temp-panel\"><div class=\"temp-grid\"><div><div class=\"temp-label\">🌡 Current GPU</div><div class=\"temp-value\">{temp:.1f}°C</div><div class=\"delta\">~ {delta:+.1f}°C vs prev</div></div><div><div class=\"temp-label\">✣ AI Next Pred</div><div class=\"pred-value\">{predicted:.2f}°C</div><div class=\"delta\">Threshold {SAFE_TEMP:.0f}°C</div></div></div><div class=\"gauge\"><div class=\"gauge-marker\" style=\"left:{marker:.1f}%\"></div></div><div class=\"gauge-labels\"><span>20°C</span><span>35°C threshold</span><span>50°C</span></div></div><div class=\"info-grid\"><div class=\"info-box\"><div class=\"info-label\">Previous Temperature</div><div class=\"info-value\">{previous:.1f}°C</div></div><div class=\"info-box\"><div class=\"info-label\">Thermal Gauge</div><div class=\"info-value\">{temp:.1f}°C / 50°C</div></div><div class=\"info-box\"><div class=\"info-label\">Hardware</div><div class=\"info-value\">{status}</div></div><div class=\"info-box\"><div class=\"info-label\">Thermal Stress</div><div class=\"info-value\">{stress}</div></div></div><div class=\"formula-box\">AI: 0.8694 − (0.0371 × previous) + (1.0082 × current)</div></div>"""
+            st.markdown(card_html, unsafe_allow_html=True)
 
     # --------------------------------------------------------
     # RAW MQTT
