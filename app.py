@@ -12,7 +12,12 @@ import plotly.graph_objects as go
 
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+from sklearn.metrics import (
+    r2_score,
+    mean_absolute_error,
+    mean_squared_error,
+    accuracy_score,
+)
 
 
 # ============================================================
@@ -23,82 +28,278 @@ st.set_page_config(
     page_title="AI Server Hotspot Cooling System",
     page_icon="🌡️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
 
 # ============================================================
-# CSS
+# ADVANCED DARK UI
 # ============================================================
 
-st.markdown("""
+st.markdown(
+    """
 <style>
-
 .stApp {
-    background-color: #0b0f14;
-    color: #f5f5f5;
+    background:
+        radial-gradient(circle at 15% 5%, rgba(0, 212, 255, 0.08), transparent 28%),
+        radial-gradient(circle at 90% 15%, rgba(75, 55, 255, 0.10), transparent 30%),
+        #070b12;
+    color: #f5f7fb;
 }
 
 .block-container {
-    padding-top: 1.5rem;
+    max-width: 1800px;
+    padding-top: 1.0rem;
     padding-bottom: 2rem;
 }
 
-h1, h2, h3, h4 {
+h1, h2, h3, h4, h5, h6 {
     color: #ffffff !important;
 }
 
 [data-testid="stSidebar"] {
-    background-color: #11161d;
+    background: #0b1018;
+    border-right: 1px solid #1e2a3a;
 }
 
 [data-testid="stMetric"] {
-    background-color: #151b23;
-    border: 1px solid #29313d;
-    border-radius: 12px;
+    background: linear-gradient(145deg, #111a27, #0d141f);
+    border: 1px solid #243247;
+    border-radius: 14px;
     padding: 12px;
 }
 
+[data-testid="stMetricValue"] {
+    color: #f8fbff;
+}
+
 .server-card {
-    background-color: #151b23;
-    border: 1px solid #29313d;
-    border-radius: 14px;
+    background:
+        linear-gradient(145deg, rgba(20, 35, 58, 0.98), rgba(10, 17, 29, 0.98));
+    border: 1px solid #263a56;
+    border-radius: 18px;
     padding: 18px;
-    margin-bottom: 15px;
+    min-height: 650px;
+    box-shadow: 0 10px 35px rgba(0, 0, 0, 0.28);
+    margin-bottom: 18px;
 }
 
-.safe {
-    color: #5ee58a;
+.server-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.server-title {
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: #ffffff;
+}
+
+.server-rack {
+    color: #8998aa;
+    font-size: 0.82rem;
+    margin-top: 3px;
+}
+
+.badge {
+    display: inline-block;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 800;
+    border: 1px solid rgba(255,255,255,0.12);
+}
+
+.badge-safe { color: #68f3a1; background: rgba(40, 190, 100, 0.12); }
+.badge-warm { color: #ffd166; background: rgba(255, 190, 50, 0.12); }
+.badge-hot { color: #ff9b55; background: rgba(255, 120, 40, 0.13); }
+.badge-critical { color: #ff6969; background: rgba(255, 55, 55, 0.13); }
+.badge-blue { color: #6bdcff; background: rgba(0, 190, 255, 0.12); }
+
+.temp-panel {
+    margin-top: 16px;
+    padding: 16px;
+    border-radius: 16px;
+    background: linear-gradient(145deg, #101c2c, #0a111d);
+    border: 1px solid #263c59;
+}
+
+.temp-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.temp-label {
+    color: #b8c4d3;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.temp-value {
+    color: #ffffff;
+    font-size: 2.0rem;
+    font-weight: 900;
+    margin-top: 5px;
+}
+
+.pred-value {
+    color: #76e7ff;
+    font-size: 1.65rem;
+    font-weight: 900;
+    margin-top: 5px;
+}
+
+.delta {
+    color: #ff6b9c;
+    font-size: 0.78rem;
+    font-weight: 700;
+    margin-top: 4px;
+}
+
+.gauge {
+    margin-top: 14px;
+    height: 12px;
+    border-radius: 99px;
+    background: linear-gradient(
+        90deg,
+        #35d77f 0%,
+        #35d77f 50%,
+        #ffd166 50%,
+        #ffd166 66.67%,
+        #ff8c42 66.67%,
+        #ff8c42 83.33%,
+        #ff4f5e 83.33%,
+        #ff4f5e 100%
+    );
+    position: relative;
+    overflow: hidden;
+}
+
+.gauge-marker {
+    position: absolute;
+    top: -4px;
+    width: 4px;
+    height: 20px;
+    background: white;
+    border-radius: 5px;
+    box-shadow: 0 0 10px rgba(255,255,255,0.7);
+}
+
+.gauge-labels {
+    display: flex;
+    justify-content: space-between;
+    color: #7f8da0;
+    font-size: 0.68rem;
+    margin-top: 4px;
+}
+
+.info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.info-box {
+    background: rgba(15, 25, 40, 0.85);
+    border: 1px solid #26384f;
+    border-radius: 12px;
+    padding: 11px;
+}
+
+.info-label {
+    color: #7f8da0;
+    font-size: 0.72rem;
     font-weight: 700;
 }
 
-.warning {
-    color: #ffd166;
-    font-weight: 700;
+.info-value {
+    color: #eef5ff;
+    font-weight: 800;
+    margin-top: 3px;
 }
 
-.hotspot {
-    color: #ff8c42;
-    font-weight: 700;
+.formula-box {
+    margin-top: 15px;
+    padding: 10px 12px;
+    background: #09111d;
+    border: 1px solid #20334d;
+    border-radius: 10px;
+    color: #a9c4dd;
+    font-size: 0.72rem;
+    overflow-x: auto;
 }
 
-.critical {
-    color: #ff5c5c;
-    font-weight: 700;
+.live-dot {
+    color: #55ef94;
+    font-weight: 800;
 }
 
-.live {
-    color: #5ee58a;
-    font-weight: 700;
+.off-dot {
+    color: #8d99a8;
+    font-weight: 800;
+}
+
+.hero {
+    background: linear-gradient(110deg, rgba(17, 34, 57, 0.95), rgba(8, 15, 26, 0.95));
+    border: 1px solid #223752;
+    border-radius: 20px;
+    padding: 22px 25px;
+    margin-bottom: 18px;
+}
+
+.hero-title {
+    font-size: 1.55rem;
+    font-weight: 900;
+    color: #ffffff;
+}
+
+.hero-subtitle {
+    color: #93a5b8;
+    margin-top: 4px;
+}
+
+.status-pill {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 7px 12px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 800;
+    background: rgba(0, 205, 255, 0.10);
+    color: #6de4ff;
+    border: 1px solid rgba(0, 205, 255, 0.25);
 }
 
 .small-note {
-    color: #9aa4b2;
-    font-size: 0.9rem;
+    color: #8d9bad;
+    font-size: 0.82rem;
 }
 
+.section-title {
+    font-size: 1.15rem;
+    font-weight: 900;
+    margin: 18px 0 10px 0;
+}
+
+div[data-testid="stButton"] > button {
+    border-radius: 12px;
+    font-weight: 800;
+}
+
+@media (max-width: 900px) {
+    .server-card {
+        min-height: auto;
+    }
+}
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 
 # ============================================================
@@ -106,64 +307,24 @@ h1, h2, h3, h4 {
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
-
 ZIP_FILE = BASE_DIR / "server_cooling_5_models_1000_rows.zip"
-
 DATA_DIR = BASE_DIR / "_model_data"
 
-
-# ============================================================
-# MQTT CONFIGURATION
-#
-# WOKWI:
-#   broker.hivemq.com
-#   port 1883
-#
-# STREAMLIT:
-#   broker.hivemq.com
-#   WebSocket port 8000
-#   path /mqtt
-# ============================================================
-
 MQTT_BROKER = "broker.hivemq.com"
-
 MQTT_TCP_PORT = 1883
-
 MQTT_WEBSOCKET_PORT = 8000
-
 MQTT_TOPIC = "ai-cooling/WOKWI-ESP32-001"
 
-
-# ============================================================
-# TEMPERATURE THRESHOLDS
-# ============================================================
-
 SAFE_TEMP = 35.0
-
 WARNING_TEMP = 40.0
-
 CRITICAL_TEMP = 50.0
 
-
-
-
-
-# ============================================================
-# CSV FILE NAMES INSIDE ZIP
-# ============================================================
-
 CSV_NAMES = [
-
     "server_cooling_model1_1000_rows.csv",
-
     "server_cooling_model2_1000_rows.csv",
-
     "server_cooling_model3_1000_rows.csv",
-
     "server_cooling_model4_1000_rows.csv",
-
-    "server_cooling_model5_1000_rows.csv"
-
+    "server_cooling_model5_1000_rows.csv",
 ]
 
 
@@ -172,296 +333,124 @@ CSV_NAMES = [
 # ============================================================
 
 def prepare_datasets():
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    DATA_DIR.mkdir(
-        parents=True,
-        exist_ok=True
-    )
+    found_files = {file.name: file for file in DATA_DIR.rglob("*.csv")}
 
-    # --------------------------------------------------------
-    # Check whether files were already extracted
-    # --------------------------------------------------------
-
-    found_files = {}
-
-    for file in DATA_DIR.rglob("*.csv"):
-        found_files[file.name] = file
-
-    if all(
-        name in found_files
-        for name in CSV_NAMES
-    ):
-        return [
-            found_files[name]
-            for name in CSV_NAMES
-        ]
-
-    # --------------------------------------------------------
-    # Check ZIP
-    # --------------------------------------------------------
+    if all(name in found_files for name in CSV_NAMES):
+        return [found_files[name] for name in CSV_NAMES]
 
     if not ZIP_FILE.exists():
-
         raise FileNotFoundError(
-            "\nDataset ZIP file was not found.\n\n"
-            f"Expected:\n{ZIP_FILE}\n\n"
-            "Your GitHub repository must contain:\n"
-            "app.py\n"
-            "requirements.txt\n"
-            "server_cooling_5_models_1000_rows.zip"
+            "Dataset ZIP file was not found. Expected: "
+            f"{ZIP_FILE.name}"
         )
 
-    # --------------------------------------------------------
-    # Extract ZIP
-    # --------------------------------------------------------
+    with zipfile.ZipFile(ZIP_FILE, "r") as zip_ref:
+        zip_ref.extractall(DATA_DIR)
 
-    try:
+    found_files = {file.name: file for file in DATA_DIR.rglob("*.csv")}
 
-        with zipfile.ZipFile(
-            ZIP_FILE,
-            "r"
-        ) as zip_ref:
-
-            zip_ref.extractall(DATA_DIR)
-
-    except zipfile.BadZipFile:
-
-        raise FileNotFoundError(
-            "server_cooling_5_models_1000_rows.zip "
-            "is not a valid ZIP file."
-        )
-
-    # --------------------------------------------------------
-    # Search recursively
-    # --------------------------------------------------------
-
-    found_files = {}
-
-    for file in DATA_DIR.rglob("*.csv"):
-        found_files[file.name] = file
-
-    missing = [
-        name
-        for name in CSV_NAMES
-        if name not in found_files
-    ]
+    missing = [name for name in CSV_NAMES if name not in found_files]
 
     if missing:
-
         raise FileNotFoundError(
-            "These CSV files were not found inside the ZIP:\n\n"
+            "These CSV files were not found inside the ZIP:\n"
             + "\n".join(missing)
         )
 
-    # --------------------------------------------------------
-    # Return files in exact Model 1 → Model 5 order
-    # --------------------------------------------------------
+    return [found_files[name] for name in CSV_NAMES]
 
-    return [
-        found_files[name]
-        for name in CSV_NAMES
-    ]
-
-
-# ============================================================
-# LOAD DATASETS
-# ============================================================
 
 @st.cache_data
 def load_datasets():
-
     files = prepare_datasets()
 
-    if len(files) != 5:
-        raise RuntimeError(
-            f"Expected 5 CSV files, but found {len(files)}"
-        )
+    frames = [pd.read_csv(file) for file in files]
 
-    df1 = pd.read_csv(files[0])
-    df2 = pd.read_csv(files[1])
-    df3 = pd.read_csv(files[2])
-    df4 = pd.read_csv(files[3])
-    df5 = pd.read_csv(files[4])
-
-    # Remove accidental whitespace from column names
-    for df in [df1, df2, df3, df4, df5]:
+    for df in frames:
         df.columns = df.columns.astype(str).str.strip()
 
-    return df1, df2, df3, df4, df5
+    return tuple(frames)
+
+
 # ============================================================
 # MQTT STATE
 # ============================================================
 
 class MQTTState:
-
     def __init__(self):
-
-        self.lock = threading.Lock()
-
+        self.lock = threading.RLock()
         self.connected = False
-
         self.latest_data = None
-
         self.last_update = None
-
         self.message_count = 0
-
         self.connection_error = None
+        self.last_payload = ""
+        self.running = False
 
-        client_id = (
-            "STREAMLIT-"
-            + uuid.uuid4().hex[:12]
-        )
-
-        # ----------------------------------------------------
-        # MQTT OVER WEBSOCKETS
-        # This is important for Streamlit Cloud.
-        # ----------------------------------------------------
+        client_id = "STREAMLIT-" + uuid.uuid4().hex[:12]
 
         self.client = mqtt.Client(
-
-            callback_api_version=
-            mqtt.CallbackAPIVersion.VERSION2,
-
+            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
             client_id=client_id,
-
-            transport="websockets"
-
+            transport="websockets",
         )
 
-        self.client.ws_set_options(
-            path="/mqtt"
-        )
+        self.client.ws_set_options(path="/mqtt")
 
-        self.client.on_connect = (
-            self.on_connect
-        )
+        self.client.on_connect = self.on_connect
+        self.client.on_message = self.on_message
+        self.client.on_disconnect = self.on_disconnect
 
-        self.client.on_message = (
-            self.on_message
-        )
+        # Public broker reconnect settings.
+        self.client.reconnect_delay_set(min_delay=2, max_delay=20)
 
-        self.client.on_disconnect = (
-            self.on_disconnect
-        )
-
-
-    # ========================================================
-    # CONNECT CALLBACK
-    # ========================================================
-
-    def on_connect(
-        self,
-        client,
-        userdata,
-        flags,
-        reason_code,
-        properties
-    ):
-
-        print(
-            "MQTT connection result:",
-            reason_code
-        )
+    def on_connect(self, client, userdata, flags, reason_code, properties):
+        print("MQTT connection result:", reason_code)
 
         if reason_code == 0:
-
             with self.lock:
-
                 self.connected = True
-
                 self.connection_error = None
+                self.running = True
 
-
-            result = client.subscribe(
-                MQTT_TOPIC,
-                qos=0
-            )
-
-            print(
-                "Subscribed:",
-                MQTT_TOPIC,
-                result
-            )
+            result = client.subscribe(MQTT_TOPIC, qos=0)
+            print("Subscribed:", MQTT_TOPIC, result)
 
         else:
-
             with self.lock:
-
                 self.connected = False
+                self.connection_error = f"MQTT connection refused: {reason_code}"
 
-                self.connection_error = (
-                    f"MQTT connection refused: "
-                    f"{reason_code}"
-                )
-
-
-    # ========================================================
-    # MESSAGE CALLBACK
-    # ========================================================
-
-    def on_message(
-        self,
-        client,
-        userdata,
-        msg
-    ):
-
+    def on_message(self, client, userdata, msg):
         try:
-
-            payload = msg.payload.decode(
-                "utf-8"
-            )
-
-            print(
-                "MQTT MESSAGE RECEIVED:"
-            )
-
-            print(payload)
-
-
-            data = json.loads(
-                payload
-            )
-
-
-            # -----------------------------------------------
-            # Verify expected structure
-            # -----------------------------------------------
+            payload = msg.payload.decode("utf-8", errors="replace")
+            data = json.loads(payload)
 
             if "servers" not in data:
-
-                print(
-                    "MQTT message does not contain servers."
-                )
-
                 return
 
+            servers = data.get("servers", [])
 
-            # -----------------------------------------------
-            # Store newest Wokwi data
-            # -----------------------------------------------
+            if not isinstance(servers, list):
+                return
 
+            # Normalize server count while preserving the incoming values.
             with self.lock:
-
                 self.latest_data = data
-
+                self.last_payload = payload
                 self.last_update = time.time()
-
                 self.message_count += 1
-
-
-        except Exception as e:
+                self.connected = True
 
             print(
-                "MQTT message processing error:",
-                e
+                f"MQTT LIVE MESSAGE #{self.message_count}: "
+                f"{len(servers)} servers"
             )
 
-
-    # ========================================================
-    # DISCONNECT CALLBACK
-    # ========================================================
+        except Exception as exc:
+            print("MQTT message processing error:", exc)
 
     def on_disconnect(
         self,
@@ -469,163 +458,86 @@ class MQTTState:
         userdata,
         disconnect_flags,
         reason_code,
-        properties
+        properties,
     ):
-
         with self.lock:
-
             self.connected = False
 
-
-        print(
-            "MQTT disconnected:",
-            reason_code
-        )
-
-
-    # ========================================================
-    # CONNECT
-    # ========================================================
+        print("MQTT disconnected:", reason_code)
 
     def connect(self):
-
         try:
-
             if self.client.is_connected():
-
                 with self.lock:
-
                     self.connected = True
-
+                    self.running = True
                 return True
 
-
-            # ------------------------------------------------
-            # Streamlit Cloud connects using WebSocket 8000
-            # ------------------------------------------------
-
+            # Do not create a new client for every refresh.
             self.client.connect(
-
                 MQTT_BROKER,
-
                 MQTT_WEBSOCKET_PORT,
-
-                keepalive=60
-
+                keepalive=60,
             )
 
+            # One background network loop remains active continuously.
+            if not self.running:
+                self.client.loop_start()
 
-            # ------------------------------------------------
-            # Start continuous MQTT listener
-            # ------------------------------------------------
-
-            self.client.loop_start()
-
+            with self.lock:
+                self.running = True
 
             return True
 
-
-        except Exception as e:
-
-            print(
-                "MQTT connection error:",
-                e
-            )
-
+        except Exception as exc:
             with self.lock:
-
                 self.connected = False
-
-                self.connection_error = str(e)
-
+                self.connection_error = str(exc)
 
             return False
 
-
-    # ========================================================
-    # DISCONNECT
-    # ========================================================
-
     def disconnect(self):
-
         try:
-
             self.client.loop_stop()
-
             self.client.disconnect()
-
         except Exception:
-
             pass
 
-
         with self.lock:
-
             self.connected = False
-
-
-    # ========================================================
-    # GET DATA
-    # ========================================================
+            self.running = False
 
     def get_data(self):
-
         with self.lock:
+            if self.latest_data is None:
+                return None
 
-            return self.latest_data
-
-
-    # ========================================================
-    # GET CONNECTION STATUS
-    # ========================================================
+            # Return a copy so the UI never reads a half-updated object.
+            return json.loads(json.dumps(self.latest_data))
 
     def is_connected(self):
-
         with self.lock:
-
             return self.connected
 
-
-    # ========================================================
-    # GET LAST UPDATE
-    # ========================================================
-
     def get_last_update(self):
-
         with self.lock:
-
             return self.last_update
 
-
-    # ========================================================
-    # GET MESSAGE COUNT
-    # ========================================================
-
     def get_message_count(self):
-
         with self.lock:
-
             return self.message_count
 
-
-    # ========================================================
-    # GET ERROR
-    # ========================================================
-
     def get_error(self):
-
         with self.lock:
-
             return self.connection_error
 
+    def get_last_payload(self):
+        with self.lock:
+            return self.last_payload
 
-# ============================================================
-# PERSISTENT MQTT OBJECT
-# ============================================================
 
 @st.cache_resource
 def get_mqtt_state():
-
     return MQTTState()
 
 
@@ -633,539 +545,428 @@ mqtt_state = get_mqtt_state()
 
 
 # ============================================================
-# TRAIN ML MODELS
+# MODEL TRAINING
 # ============================================================
+
+# These are the feature columns used by the current datasets/app.
+# The dashboard separately exposes the original 11 simulated ML
+# parameters in build_features().
+MODEL_SPECS = {
+    "model1": {
+        "features": [
+            "Ambient Temperature C",
+            "Current GPU Temperature C",
+            "CPU Temperature C",
+            "Server Load Percent",
+            "Humidity Percent",
+            "Current Fan Speed Percent",
+        ],
+        "target": "Future Temperature C",
+        "kind": "regression",
+        "name": "Future GPU Temperature",
+    },
+    "model2": {
+        "features": [
+            "Ambient Temperature C",
+            "Current GPU Temperature C",
+            "CPU Temperature C",
+            "Server Load Percent",
+            "Humidity Percent",
+            "Current Fan Speed Percent",
+        ],
+        "target": "Required Fan Speed Percent",
+        "kind": "regression",
+        "name": "Required Fan Speed",
+    },
+    "model3": {
+        "features": [
+            "Ambient Temperature C",
+            "Current GPU Temperature C",
+            "CPU Temperature C",
+            "Server Load Percent",
+            "Current Fan Speed Percent",
+            "Temperature Rise C",
+        ],
+        "target": "Hotspot Risk",
+        "kind": "regression",
+        "name": "Hotspot Risk",
+    },
+    "model4": {
+        "features": [
+            "Ambient Temperature C",
+            "Current GPU Temperature C",
+            "CPU Temperature C",
+            "Server Load Percent",
+            "Fan Speed Percent",
+            "Temperature Before Cooling C",
+        ],
+        "target": "Cooling Effectiveness Percent",
+        "kind": "regression",
+        "name": "Cooling Effectiveness",
+    },
+    "model5": {
+        "features": [
+            "Ambient Temperature C",
+            "Current GPU Temperature C",
+            "CPU Temperature C",
+            "Server Load Percent",
+            "Fan Speed Percent",
+            "Hotspot Risk",
+        ],
+        "target": "Overheating Warning",
+        "kind": "classification",
+        "name": "Overheating Warning",
+    },
+}
+
+
+def train_one_regressor(df, features, target):
+    X = df[features].apply(pd.to_numeric, errors="coerce")
+    y = pd.to_numeric(df[target], errors="coerce")
+
+    valid = X.notna().all(axis=1) & y.notna()
+
+    X = X.loc[valid]
+    y = y.loc[valid]
+
+    if len(X) < 10:
+        raise ValueError(f"Not enough valid rows for target '{target}'.")
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.20, random_state=42
+    )
+
+    model = RandomForestRegressor(
+        n_estimators=180,
+        random_state=42,
+        n_jobs=-1,
+        max_depth=None,
+    )
+
+    model.fit(X_train, y_train)
+
+    pred = model.predict(X_test)
+
+    mse = mean_squared_error(y_test, pred)
+
+    metrics = {
+        "R2": float(r2_score(y_test, pred)),
+        "MAE": float(mean_absolute_error(y_test, pred)),
+        "RMSE": float(mse ** 0.5),
+        "rows": int(len(X)),
+    }
+
+    return model, metrics
+
+
+def train_classifier(df, features, target):
+    X = df[features].apply(pd.to_numeric, errors="coerce")
+    y = pd.to_numeric(df[target], errors="coerce")
+
+    valid = X.notna().all(axis=1) & y.notna()
+
+    X = X.loc[valid]
+    y = y.loc[valid].astype(int)
+
+    if len(X) < 10:
+        raise ValueError(f"Not enough valid rows for target '{target}'.")
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=0.20,
+        random_state=42,
+        stratify=y if y.nunique() > 1 else None,
+    )
+
+    model = RandomForestClassifier(
+        n_estimators=180,
+        random_state=42,
+        n_jobs=-1,
+        class_weight="balanced",
+    )
+
+    model.fit(X_train, y_train)
+
+    pred = model.predict(X_test)
+
+    metrics = {
+        "Accuracy": float(accuracy_score(y_test, pred)),
+        "rows": int(len(X)),
+    }
+
+    return model, metrics
+
 
 @st.cache_resource
 def train_models():
-
     df1, df2, df3, df4, df5 = load_datasets()
+    frames = [df1, df2, df3, df4, df5]
 
-    # =========================================================
-    # MODEL 1
-    # Future Temperature
-    # =========================================================
+    trained = {}
 
-    features1 = [
-        "Ambient Temperature C",
-        "Current GPU Temperature C",
-        "CPU Temperature C",
-        "Server Load Percent",
-        "Humidity Percent",
-        "Current Fan Speed Percent"
-    ]
+    for index, (key, spec) in enumerate(MODEL_SPECS.items()):
+        df = frames[index]
 
-    target1 = "Future Temperature C"
+        missing = [
+            col
+            for col in spec["features"] + [spec["target"]]
+            if col not in df.columns
+        ]
 
-    X1 = df1[features1]
-    y1 = df1[target1]
+        if missing:
+            raise ValueError(
+                f"{key} dataset is missing required columns: "
+                + ", ".join(missing)
+            )
 
-    model1 = RandomForestRegressor(
-        n_estimators=150,
-        random_state=42,
-        n_jobs=-1
-    )
+        if spec["kind"] == "classification":
+            model, metrics = train_classifier(
+                df,
+                spec["features"],
+                spec["target"],
+            )
+        else:
+            model, metrics = train_one_regressor(
+                df,
+                spec["features"],
+                spec["target"],
+            )
 
-    model1.fit(X1, y1)
+        trained[key] = {
+            "model": model,
+            "metrics": metrics,
+            "features": spec["features"],
+            "target": spec["target"],
+            "kind": spec["kind"],
+            "name": spec["name"],
+        }
 
-
-    # =========================================================
-    # MODEL 2
-    # Required Fan Speed
-    # =========================================================
-
-    features2 = [
-        "Ambient Temperature C",
-        "Current GPU Temperature C",
-        "CPU Temperature C",
-        "Server Load Percent",
-        "Humidity Percent",
-        "Current Fan Speed Percent"
-    ]
-
-    target2 = "Required Fan Speed Percent"
-
-    X2 = df2[features2]
-    y2 = df2[target2]
-
-    model2 = RandomForestRegressor(
-        n_estimators=150,
-        random_state=42,
-        n_jobs=-1
-    )
-
-    model2.fit(X2, y2)
-
-
-    # =========================================================
-    # MODEL 3
-    # Hotspot Risk
-    # =========================================================
-
-    features3 = [
-        "Ambient Temperature C",
-        "Current GPU Temperature C",
-        "CPU Temperature C",
-        "Server Load Percent",
-        "Current Fan Speed Percent",
-        "Temperature Rise C"
-    ]
-
-    target3 = "Hotspot Risk"
-
-    X3 = df3[features3]
-    y3 = df3[target3]
-
-    model3 = RandomForestRegressor(
-        n_estimators=150,
-        random_state=42,
-        n_jobs=-1
-    )
-
-    model3.fit(X3, y3)
-
-
-    # =========================================================
-    # MODEL 4
-    # Cooling Effectiveness
-    # =========================================================
-
-    features4 = [
-        "Ambient Temperature C",
-        "Current GPU Temperature C",
-        "CPU Temperature C",
-        "Server Load Percent",
-        "Fan Speed Percent",
-        "Temperature Before Cooling C"
-    ]
-
-    target4 = "Cooling Effectiveness Percent"
-
-    X4 = df4[features4]
-    y4 = df4[target4]
-
-    model4 = RandomForestRegressor(
-        n_estimators=150,
-        random_state=42,
-        n_jobs=-1
-    )
-
-    model4.fit(X4, y4)
-
-
-    # =========================================================
-    # MODEL 5
-    # Overheating Warning
-    # =========================================================
-
-    features5 = [
-        "Ambient Temperature C",
-        "Current GPU Temperature C",
-        "CPU Temperature C",
-        "Server Load Percent",
-        "Fan Speed Percent",
-        "Hotspot Risk"
-    ]
-
-    target5 = "Overheating Warning"
-
-    X5 = df5[features5]
-    y5 = df5[target5]
-
-    # Make sure classification target is numeric
-    y5 = pd.to_numeric(y5, errors="coerce")
-
-    valid = y5.notna()
-
-    X5 = X5.loc[valid]
-    y5 = y5.loc[valid]
-
-    model5 = RandomForestClassifier(
-        n_estimators=150,
-        random_state=42,
-        n_jobs=-1
-    )
-
-    model5.fit(X5, y5.astype(int))
-
-
-    # =========================================================
-    # RETURN ALL MODELS
-    # =========================================================
-
-    return {
-        "model1": model1,
-        "model2": model2,
-        "model3": model3,
-        "model4": model4,
-        "model5": model5
-    }
-# ============================================================
-# TRAIN
-# ============================================================
-
-models = train_models()
+    return trained
 
 
 # ============================================================
-# BUILD ML INPUTS FROM LIVE WOKWI TEMPERATURE
+# ORIGINAL 11 ML PARAMETERS
 # ============================================================
 
 def build_features(server):
+    """
+    Temperature comes directly from Wokwi.
+    The remaining parameters are estimated/simulated for the
+    ML demonstration because the Wokwi model currently measures
+    temperature directly.
+    """
 
-    temp = float(
-        server.get(
-            "temperature",
-            22.0
-        )
-    )
+    temp = float(server.get("temperature", 22.0))
+    cooling = bool(server.get("cooling_active", False))
 
-
-    cooling = bool(
-        server.get(
-            "cooling_active",
-            False
-        )
-    )
-
-
-    gpu_usage = min(
-        100.0,
-        max(
-            10.0,
-            35.0 + (temp - 25.0) * 4.0
-        )
-    )
-
-
-    gpu_power = min(
-        450.0,
-        max(
-            80.0,
-            120.0 + gpu_usage * 2.2
-        )
-    )
-
-
-    cpu_usage = min(
-        100.0,
-        max(
-            15.0,
-            gpu_usage * 0.72
-        )
-    )
-
-
-    cpu_temp = min(
-        90.0,
-        max(
-            30.0,
-            35.0 + (temp - 25.0) * 0.65
-        )
-    )
-
+    gpu_usage = min(100.0, max(10.0, 35.0 + (temp - 25.0) * 4.0))
+    gpu_power = min(450.0, max(80.0, 120.0 + gpu_usage * 2.2))
+    cpu_usage = min(100.0, max(15.0, gpu_usage * 0.72))
+    cpu_temp = min(90.0, max(30.0, 35.0 + (temp - 25.0) * 0.65))
 
     ambient = 25.0
-
-
-    inlet = max(
-        18.0,
-        temp - 8.0
-    )
-
-
+    inlet = max(18.0, temp - 8.0)
     outlet = temp + 5.0
-
 
     fan_speed = min(
         100.0,
-        max(
-            25.0,
-            40.0 + (temp - 30.0) * 3.0
-        )
+        max(25.0, 40.0 + (temp - 30.0) * 3.0),
     )
 
-
     if cooling:
-
-        fan_speed = min(
-            100.0,
-            fan_speed + 15.0
-        )
-
+        fan_speed = min(100.0, fan_speed + 15.0)
 
     airflow = min(
         3.0,
-        max(
-            0.4,
-            0.8 + fan_speed / 100.0 * 1.5
-        )
+        max(0.4, 0.8 + fan_speed / 100.0 * 1.5),
     )
-
 
     workload = min(
         100.0,
-        max(
-            10.0,
-            gpu_usage * 0.92
-        )
+        max(10.0, gpu_usage * 0.92),
+    )
+
+    return pd.DataFrame(
+        [
+            {
+                "GPU_usage_percent": gpu_usage,
+                "GPU_power_W": gpu_power,
+                "CPU_usage_percent": cpu_usage,
+                "CPU_temperature_C": cpu_temp,
+                "GPU_temperature_C": temp,
+                "ambient_temperature_C": ambient,
+                "inlet_temperature_C": inlet,
+                "outlet_temperature_C": outlet,
+                "fan_speed_percent": fan_speed,
+                "airflow_m3_s": airflow,
+                "workload_percent": workload,
+            }
+        ]
     )
 
 
-    return pd.DataFrame([{
+def make_dataset_model_inputs(server, original):
+    """
+    Convert the live Wokwi/original 11-parameter representation
+    into the exact columns required by the current five CSV datasets.
+    """
 
-        "GPU_usage_percent":
-        gpu_usage,
-
-        "GPU_power_W":
-        gpu_power,
-
-        "CPU_usage_percent":
-        cpu_usage,
-
-        "CPU_temperature_C":
-        cpu_temp,
-
-        "GPU_temperature_C":
-        temp,
-
-        "ambient_temperature_C":
-        ambient,
-
-        "inlet_temperature_C":
-        inlet,
-
-        "outlet_temperature_C":
-        outlet,
-
-        "fan_speed_percent":
-        fan_speed,
-
-        "airflow_m3_s":
-        airflow,
-
-        "workload_percent":
-        workload
-
-    }])
-
-
-# ============================================================
-# ML PREDICTION
-# ============================================================
-
-def predict_server(server):
-
-    features = build_features(
-        server
-    )
-
-
-    future_temp = float(
-        models["model1"].predict(
-            features
-        )[0]
-    )
-
-
-    required_fan = float(
-        models["model2"].predict(
-            features
-        )[0]
-    )
-
-
-    hotspot_risk = float(
-        models["model3"].predict(
-            features
-        )[0]
-    )
-
-
-    cooling_effectiveness = float(
-        models["model4"].predict(
-            features
-        )[0]
-    )
-
-
-    warning = int(
-        models["model5"].predict(
-            features
-        )[0]
-    )
-
-
-    temp = float(
+    temp = float(server.get("temperature", original["GPU_temperature_C"]))
+    previous = float(
         server.get(
-            "temperature",
-            0
+            "previous_temperature",
+            max(0.0, temp - 0.5),
         )
     )
 
+    cooling = bool(server.get("cooling_active", False))
 
-    # --------------------------------------------------------
-    # LIVE HARDWARE TEMPERATURE OVERRIDES
-    # --------------------------------------------------------
+    gpu_usage = float(original["GPU_usage_percent"])
+    cpu_usage = float(original["CPU_usage_percent"])
+    cpu_temp = float(original["CPU_temperature_C"])
+    ambient = float(original["ambient_temperature_C"])
+    fan = float(original["fan_speed_percent"])
+    humidity = 45.0
 
-    if temp >= CRITICAL_TEMP:
-
-        hotspot_risk = 100.0
-
-        warning = 1
-
-
-    elif temp >= WARNING_TEMP:
-
-        hotspot_risk = max(
-            hotspot_risk,
-            80.0
-        )
-
-        warning = 1
-
-
-    elif temp >= SAFE_TEMP:
-
-        hotspot_risk = max(
-            hotspot_risk,
-            35.0
-        )
-
-
-    hotspot_risk = max(
-        0.0,
-        min(
-            100.0,
-            hotspot_risk
+    server_load = float(
+        server.get(
+            "workload_percent",
+            original["workload_percent"],
         )
     )
 
+    temperature_rise = temp - previous
 
-    required_fan = max(
-        0.0,
-        min(
-            100.0,
-            required_fan
-        )
-    )
-
-
-    cooling_effectiveness = max(
-        0.0,
-        min(
-            100.0,
-            cooling_effectiveness
-        )
-    )
-
-
-    return {
-
-        "future_temp":
-        future_temp,
-
-        "required_fan":
-        required_fan,
-
-        "hotspot_risk":
-        hotspot_risk,
-
-        "cooling_effectiveness":
-        cooling_effectiveness,
-
-        "warning":
-        warning
-
+    common = {
+        "Ambient Temperature C": ambient,
+        "Current GPU Temperature C": temp,
+        "CPU Temperature C": cpu_temp,
+        "Server Load Percent": server_load,
+        "Humidity Percent": humidity,
+        "Current Fan Speed Percent": fan,
+        "Fan Speed Percent": fan,
+        "Temperature Rise C": temperature_rise,
+        "Temperature Before Cooling C": previous,
+        "Hotspot Risk": 100.0 if temp >= WARNING_TEMP else max(0.0, temperature_rise * 10.0),
+        "GPU_usage_percent": gpu_usage,
+        "CPU_usage_percent": cpu_usage,
+        "cooling_active": cooling,
     }
 
+    return common
+
+
+def predict_server(server, models):
+    original = build_features(server)
+    original_row = original.iloc[0].to_dict()
+    inputs = make_dataset_model_inputs(server, original_row)
+
+    results = {}
+
+    for key, bundle in models.items():
+        row = pd.DataFrame(
+            [
+                {
+                    feature: inputs[feature]
+                    for feature in bundle["features"]
+                }
+            ]
+        )
+
+        value = bundle["model"].predict(row)[0]
+
+        if bundle["kind"] == "classification":
+            results[key] = int(value)
+        else:
+            results[key] = float(value)
+
+    temp = float(server.get("temperature", 0.0))
+
+    # Hardware temperature has priority for safety display.
+    if temp >= CRITICAL_TEMP:
+        results["model3"] = 100.0
+        results["model5"] = 1
+
+    elif temp >= WARNING_TEMP:
+        results["model3"] = max(float(results["model3"]), 80.0)
+        results["model5"] = 1
+
+    elif temp >= SAFE_TEMP:
+        results["model3"] = max(float(results["model3"]), 35.0)
+
+    results["model3"] = max(0.0, min(100.0, float(results["model3"])))
+    results["model2"] = max(0.0, min(100.0, float(results["model2"])))
+    results["model4"] = max(0.0, min(100.0, float(results["model4"])))
+
+    return results, original
+
 
 # ============================================================
-# STATUS FUNCTIONS
+# STATUS HELPERS
 # ============================================================
 
 def temperature_status(temp):
-
     if temp >= CRITICAL_TEMP:
-
         return "CRITICAL"
-
-
     if temp >= WARNING_TEMP:
-
         return "HIGH TEMPERATURE"
-
-
     if temp >= SAFE_TEMP:
-
         return "WARM - MONITORING"
+    return "NORMAL"
 
 
-    return "SAFE"
+def status_badge(temp):
+    if temp >= CRITICAL_TEMP:
+        return "badge-critical"
+    if temp >= WARNING_TEMP:
+        return "badge-hot"
+    if temp >= SAFE_TEMP:
+        return "badge-warm"
+    return "badge-safe"
 
 
 def protection_status(temp):
-
     if temp >= CRITICAL_TEMP:
-
         return "CRITICAL PROTECTION"
-
-
     if temp >= WARNING_TEMP:
-
         return "ACTIVE"
-
-
     return "NORMAL"
 
 
 def hotspot_status(server):
-
-    temp = float(
-        server.get(
-            "temperature",
-            0
-        )
-    )
-
-
-    predicted = float(
-        server.get(
-            "predicted_temperature",
-            temp
-        )
-    )
-
-
-    cooling = bool(
-        server.get(
-            "cooling_active",
-            False
-        )
-    )
-
+    temp = float(server.get("temperature", 0))
+    predicted = float(server.get("predicted_temperature", temp))
+    cooling = bool(server.get("cooling_active", False))
 
     if temp >= CRITICAL_TEMP:
-
         return "CRITICAL HOTSPOT"
-
-
     if temp >= WARNING_TEMP:
-
         return "HOTSPOT / HIGH THERMAL STRESS"
-
-
     if predicted >= SAFE_TEMP:
-
         return "HOTSPOT PREDICTED"
-
-
     if cooling:
-
         return "COOLING ACTIVE"
-
-
     return "NO HOTSPOT"
+
+
+def thermal_stress(temp, previous, cooling):
+    if temp >= CRITICAL_TEMP:
+        return "CRITICAL"
+    if temp >= WARNING_TEMP:
+        return "HIGH"
+    if temp >= SAFE_TEMP:
+        return "MODERATE"
+    if cooling:
+        return "LOW / COOLING"
+    return "LOW"
+
+
+def safe_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 # ============================================================
@@ -1173,1309 +974,744 @@ def hotspot_status(server):
 # ============================================================
 
 with st.sidebar:
+    st.markdown("## ⚙️ System Control")
 
-    st.markdown(
-        "## ⚙️ System Control"
-    )
+    st.markdown("### MQTT Device")
+    st.code("WOKWI-ESP32-001")
 
-
-    st.markdown(
-        "### MQTT Device"
-    )
-
-
-    st.code(
-        "WOKWI-ESP32-001"
-    )
-
-
-    st.write(
-        "Broker:",
-        MQTT_BROKER
-    )
-
-
-    st.write(
-        "Wokwi MQTT Port:",
-        MQTT_TCP_PORT
-    )
-
-
-    st.write(
-        "Dashboard WebSocket Port:",
-        MQTT_WEBSOCKET_PORT
-    )
-
-
-    st.write(
-        "Topic:",
-        MQTT_TOPIC
-    )
-
+    st.write("Broker:", MQTT_BROKER)
+    st.write("Wokwi MQTT Port:", MQTT_TCP_PORT)
+    st.write("Dashboard WebSocket Port:", MQTT_WEBSOCKET_PORT)
+    st.write("Topic:", MQTT_TOPIC)
 
     st.divider()
-
-
-    # --------------------------------------------------------
-    # CONNECT
-    # --------------------------------------------------------
 
     if not mqtt_state.is_connected():
-
-        if st.button(
-            "🔌 CONNECT",
-            use_container_width=True
-        ):
-
-            success = mqtt_state.connect()
-
-
-            if success:
-
-                st.success(
-                    "Dashboard MQTT connection started."
-                )
-
+        if st.button("🔌 CONNECT", use_container_width=True):
+            if mqtt_state.connect():
+                st.success("MQTT listener started.")
                 st.rerun()
-
             else:
-
-                st.error(
-                    "Could not connect to MQTT."
-                )
-
+                st.error("Could not connect to MQTT.")
 
     else:
-
-        if st.button(
-            "🔴 DISCONNECT",
-            use_container_width=True
-        ):
-
+        if st.button("🔴 DISCONNECT", use_container_width=True):
             mqtt_state.disconnect()
-
             st.rerun()
 
-
-    st.divider()
-
-
     if mqtt_state.is_connected():
-
-        st.success(
-            "🟢 MQTT CONNECTED"
-        )
-
+        st.success("🟢 MQTT CONNECTED")
     else:
-
-        st.warning(
-            "🟡 MQTT NOT CONNECTED"
-        )
-
+        st.warning("🟡 MQTT NOT CONNECTED")
 
     st.divider()
 
-
-    st.write(
-        "Servers: 4"
-    )
-
-
-    st.write(
-        "Dashboard refresh: 30 seconds"
-    )
-
-
-    st.write(
-        "MQTT listener: continuous"
-    )
-
+    st.write("Servers: 4")
+    st.write("UI refresh: 2 seconds")
+    st.write("MQTT listener: continuous")
 
     st.divider()
-
-
-    count = mqtt_state.get_message_count()
-
 
     st.metric(
         "MQTT Messages Received",
-        count
+        mqtt_state.get_message_count(),
     )
 
+    last_update = mqtt_state.get_last_update()
+
+    if last_update is not None:
+        age = max(0.0, time.time() - last_update)
+        st.caption(f"Last Wokwi message: {age:.1f}s ago")
 
     error = mqtt_state.get_error()
 
-
     if error:
-
-        st.error(
-            error
-        )
-
+        st.error(error)
 
     st.divider()
 
-
     st.caption(
-        "AI Server Hotspot Cooling System"
+        "Wokwi directly measures temperature. "
+        "Other ML parameters are estimated for the demonstration."
     )
 
 
 # ============================================================
-# MAIN TITLE
+# TRAIN MODELS
 # ============================================================
 
-st.title(
-    "🌡️ AI Server Hotspot Cooling System"
+try:
+    models = train_models()
+    model_error = None
+except Exception as exc:
+    models = None
+    model_error = str(exc)
+
+
+# ============================================================
+# HERO
+# ============================================================
+
+st.markdown(
+    """
+<div class="hero">
+    <div class="hero-title">🌡️ AI-Based Server Hotspot Cooling System</div>
+    <div class="hero-subtitle">
+        Data-Center GPU Thermal Telemetry & Predictive Dynamic Fan Actuation
+    </div>
+    <div class="status-pill">
+        ESP32 + MQTT + Random Forest + Real-Time Wokwi Telemetry
+    </div>
+</div>
+""",
+    unsafe_allow_html=True,
 )
 
 
-st.write(
-    "Real-time Wokwi server temperature monitoring, "
-    "hotspot detection and AI cooling analysis."
-)
+# ============================================================
+# MODEL ERROR
+# ============================================================
+
+if model_error:
+    st.error("ML model initialization failed.")
+    st.code(model_error)
+    st.stop()
 
 
 # ============================================================
 # LIVE DASHBOARD
-#
-# IMPORTANT:
-# The MQTT listener runs continuously.
-#
-# The Streamlit UI refreshes every 30 seconds.
 # ============================================================
 
-@st.fragment(run_every=30)
+@st.fragment(run_every=2)
 def realtime_dashboard():
-
-    # --------------------------------------------------------
-    # Get newest MQTT message
-    # --------------------------------------------------------
 
     data = mqtt_state.get_data()
 
+    # --------------------------------------------------------
+    # No MQTT DATA YET
+    # --------------------------------------------------------
 
     if data is None:
-
         st.info(
-            "Waiting for data from Wokwi..."
+            "Waiting for live Wokwi data. Click CONNECT and keep Wokwi running."
         )
-
-
-        st.caption(
-            "Click CONNECT and keep the Wokwi simulation running."
-        )
-
-
         return
 
-
-    # --------------------------------------------------------
-    # Servers
-    # --------------------------------------------------------
-
-    servers = data.get(
-        "servers",
-        []
-    )
-
+    servers = data.get("servers", [])
 
     if not servers:
-
-        st.warning(
-            "MQTT message received, but no servers were found."
-        )
-
-
+        st.warning("MQTT message received, but no server records were found.")
         return
 
-
     # --------------------------------------------------------
-    # LAST MESSAGE TIME
+    # LIVE STATUS
     # --------------------------------------------------------
 
     last_update = mqtt_state.get_last_update()
+    age = time.time() - last_update if last_update else 999
 
+    if age <= 5:
+        live_text = "🟢 LIVE — Wokwi data updating continuously"
+    elif age <= 15:
+        live_text = f"🟡 LIVE CONNECTION — last value {age:.1f}s ago"
+    else:
+        live_text = f"🔴 STALE DATA — last value {age:.1f}s ago"
 
-    if last_update is not None:
-
-        age = (
-            time.time()
-            - last_update
-        )
-
-
-        if age <= 35:
-
-            st.markdown(
-                '<span class="live">'
-                '🟢 LIVE — Latest Wokwi data received'
-                '</span>',
-                unsafe_allow_html=True
-            )
-
-
-        else:
-
-            st.warning(
-                f"Last MQTT message was received "
-                f"{age:.0f} seconds ago."
-            )
-
+    st.markdown(
+        f'<div class="small-note"><span class="live-dot">{live_text}</span></div>',
+        unsafe_allow_html=True,
+    )
 
     # --------------------------------------------------------
-    # TEMPERATURES
+    # GLOBAL KPIs
     # --------------------------------------------------------
 
     temperatures = [
-
-        float(
-            server.get(
-                "temperature",
-                0
-            )
-        )
-
+        safe_float(server.get("temperature", 0))
         for server in servers
-
     ]
 
-
-    average_temp = (
-        sum(temperatures)
-        /
-        len(temperatures)
-    )
-
-
-    highest_temp = max(
-        temperatures
-    )
-
+    average_temp = sum(temperatures) / len(temperatures)
+    highest_temp = max(temperatures)
 
     hotspot_count = sum(
-
         temp >= WARNING_TEMP
-
         for temp in temperatures
-
     )
-
 
     critical_count = sum(
-
         temp >= CRITICAL_TEMP
-
         for temp in temperatures
-
     )
-
 
     cooling_count = sum(
-
-        bool(
-            server.get(
-                "cooling_active",
-                False
-            )
-        )
-
+        bool(server.get("cooling_active", False))
         for server in servers
-
     )
 
+    k1, k2, k3, k4, k5 = st.columns(5)
 
-    # ========================================================
-    # TOP KPIs
-    # ========================================================
+    k1.metric("Servers", len(servers))
+    k2.metric("Average GPU", f"{average_temp:.1f} °C")
+    k3.metric("Highest GPU", f"{highest_temp:.1f} °C")
+    k4.metric("Hotspots", hotspot_count)
+    k5.metric("Cooling Active", cooling_count)
 
-    st.markdown(
-        "## 📡 Live Wokwi Data"
-    )
-
-
-    m1, m2, m3, m4, m5 = st.columns(5)
-
-
-    m1.metric(
-        "Servers",
-        len(servers)
-    )
-
-
-    m2.metric(
-        "Average Temperature",
-        f"{average_temp:.1f} °C"
-    )
-
-
-    m3.metric(
-        "Highest Temperature",
-        f"{highest_temp:.1f} °C"
-    )
-
-
-    m4.metric(
-        "Hotspots",
-        hotspot_count
-    )
-
-
-    m5.metric(
-        "Cooling Active",
-        cooling_count
-    )
-
-
-    if critical_count > 0:
-
+    if critical_count:
         st.error(
-            f"🚨 {critical_count} server(s) "
-            f"are at critical temperature."
+            f"🚨 {critical_count} server(s) are at critical temperature."
         )
 
-
-    # ========================================================
+    # --------------------------------------------------------
     # SERVER CARDS
-    # ========================================================
+    # --------------------------------------------------------
 
     st.markdown(
-        "## 🖥️ Live Server Monitoring"
+        '<div class="section-title">🖥️ DATA-CENTER NODE TELEMETRY (4 SERVERS)</div>',
+        unsafe_allow_html=True,
     )
 
+    columns = st.columns(4)
 
-    columns = st.columns(2)
+    for index in range(4):
+        if index < len(servers):
+            server = servers[index]
+        else:
+            server = {
+                "server_id": index + 1,
+                "temperature": 0,
+                "predicted_temperature": 0,
+                "cooling_active": False,
+                "thermal_stress": 0,
+            }
 
-
-    for index, server in enumerate(servers):
-
-        server_id = int(
+        sid = int(server.get("server_id", index + 1))
+        temp = safe_float(server.get("temperature", 0))
+        predicted = safe_float(
+            server.get("predicted_temperature", temp)
+        )
+        previous = safe_float(
             server.get(
-                "server_id",
-                index + 1
+                "previous_temperature",
+                temp - 0.5,
             )
         )
 
+        cooling = bool(server.get("cooling_active", False))
+        status = temperature_status(temp)
+        badge_class = status_badge(temp)
 
-        temperature = float(
-            server.get(
-                "temperature",
-                0
-            )
+        delta = temp - previous
+        marker = max(0.0, min(100.0, temp / 60.0 * 100.0))
+
+        stress = thermal_stress(
+            temp,
+            previous,
+            cooling,
         )
 
-
-        predicted_temperature = float(
-            server.get(
-                "predicted_temperature",
-                temperature
-            )
-        )
-
-
-        cooling = bool(
-            server.get(
-                "cooling_active",
-                False
-            )
-        )
-
-
-        stress = float(
-            server.get(
-                "thermal_stress",
-                0
-            )
-        )
-
-
-        status = temperature_status(
-            temperature
-        )
-
-
-        with columns[index % 2]:
-
+        with columns[index]:
             st.markdown(
-                '<div class="server-card">',
-                unsafe_allow_html=True
+                f"""
+<div class="server-card">
+
+<div class="server-header">
+    <div>
+        <div class="server-title">🖥️ Server {sid:02d}</div>
+        <div class="server-rack">Rack A-{sid:02d}</div>
+    </div>
+    <div>
+        <span class="badge {badge_class}">◉ {status}</span><br>
+        <span class="badge badge-blue" style="margin-top:6px;">
+            {'❄ COOLING ON' if cooling else '❄ COOLING OFF'}
+        </span>
+    </div>
+</div>
+
+<div class="temp-panel">
+    <div class="temp-grid">
+        <div>
+            <div class="temp-label">🌡 Current GPU</div>
+            <div class="temp-value">{temp:.1f}°C</div>
+            <div class="delta">~ {delta:+.1f}°C vs prev</div>
+        </div>
+
+        <div>
+            <div class="temp-label">✣ AI Next Pred</div>
+            <div class="pred-value">{predicted:.2f}°C</div>
+            <div class="delta">Threshold {SAFE_TEMP:.0f}°C</div>
+        </div>
+    </div>
+
+    <div class="gauge">
+        <div class="gauge-marker" style="left:{marker:.1f}%"></div>
+    </div>
+
+    <div class="gauge-labels">
+        <span>20°C</span>
+        <span>35°C threshold</span>
+        <span>50°C</span>
+    </div>
+</div>
+
+<div class="info-grid">
+    <div class="info-box">
+        <div class="info-label">Previous Temperature</div>
+        <div class="info-value">{previous:.1f}°C</div>
+    </div>
+
+    <div class="info-box">
+        <div class="info-label">Thermal Gauge</div>
+        <div class="info-value">{temp:.1f}°C / 50°C</div>
+    </div>
+
+    <div class="info-box">
+        <div class="info-label">Hardware</div>
+        <div class="info-value">{status}</div>
+    </div>
+
+    <div class="info-box">
+        <div class="info-label">Thermal Stress</div>
+        <div class="info-value">{stress}</div>
+    </div>
+</div>
+
+<div class="formula-box">
+AI: 0.8694 − (0.0371 × previous) + (1.0082 × current)
+</div>
+
+</div>
+""",
+                unsafe_allow_html=True,
             )
 
+    # --------------------------------------------------------
+    # RAW MQTT
+    # --------------------------------------------------------
 
-            st.markdown(
-                f"### 🖥️ Server {server_id}"
-            )
+    with st.expander("📨 Live MQTT Payload"):
+        st.json(data)
 
-
-            # ------------------------------------------------
-            # STATUS
-            # ------------------------------------------------
-
-            if temperature >= CRITICAL_TEMP:
-
-                st.markdown(
-                    '<span class="critical">'
-                    'CRITICAL'
-                    '</span>',
-                    unsafe_allow_html=True
-                )
-
-
-            elif temperature >= WARNING_TEMP:
-
-                st.markdown(
-                    '<span class="hotspot">'
-                    'HIGH TEMPERATURE'
-                    '</span>',
-                    unsafe_allow_html=True
-                )
-
-
-            elif temperature >= SAFE_TEMP:
-
-                st.markdown(
-                    '<span class="warning">'
-                    'WARM - MONITORING'
-                    '</span>',
-                    unsafe_allow_html=True
-                )
-
-
-            else:
-
-                st.markdown(
-                    '<span class="safe">'
-                    'SAFE'
-                    '</span>',
-                    unsafe_allow_html=True
-                )
-
-
-            st.write("")
-
-
-            a, b = st.columns(2)
-
-
-            a.metric(
-                "Wokwi Temperature",
-                f"{temperature:.2f} °C"
-            )
-
-
-            b.metric(
-                "Wokwi Prediction",
-                f"{predicted_temperature:.2f} °C"
-            )
-
-
-            c, d = st.columns(2)
-
-
-            c.metric(
-                "Cooling",
-                "ON" if cooling else "OFF"
-            )
-
-
-            d.metric(
-                "Thermal Stress",
-                f"{stress:.1f}"
-            )
-
-
-            # ------------------------------------------------
-            # HOTSPOT
-            # ------------------------------------------------
-
-            if temperature >= CRITICAL_TEMP:
-
-                st.error(
-                    "🚨 CRITICAL HOTSPOT"
-                )
-
-
-            elif temperature >= WARNING_TEMP:
-
-                st.warning(
-                    "🔥 HOTSPOT / HIGH THERMAL STRESS"
-                )
-
-
-            elif predicted_temperature >= SAFE_TEMP:
-
-                st.info(
-                    "🔮 HOTSPOT PREDICTED"
-                )
-
-
-            else:
-
-                st.success(
-                    "✓ NO HOTSPOT"
-                )
-
-
-            st.write(
-                f"**Hardware Status:** {status}"
-            )
-
-
-            st.write(
-                f"**Protection:** "
-                f"{protection_status(temperature)}"
-            )
-
-
-            st.markdown(
-                "</div>",
-                unsafe_allow_html=True
-            )
-
-
-    # ========================================================
-    # RAW MQTT DATA
-    # ========================================================
-
-    with st.expander(
-        "📨 View Raw Wokwi MQTT Data"
-    ):
-
-        st.json(
-            data
-        )
-
-
-    # ========================================================
+    # --------------------------------------------------------
     # HARDWARE TABLE
-    # ========================================================
+    # --------------------------------------------------------
 
     st.markdown(
-        "## 🔧 Real-Time Hardware Status"
+        '<div class="section-title">🔧 Real-Time Hardware Status</div>',
+        unsafe_allow_html=True,
     )
-
 
     rows = []
 
-
     for server in servers:
-
-        sid = server.get(
-            "server_id",
-            0
+        sid = server.get("server_id", 0)
+        temp = safe_float(server.get("temperature", 0))
+        predicted = safe_float(
+            server.get("predicted_temperature", temp)
         )
+        cooling = bool(server.get("cooling_active", False))
 
-
-        temp = float(
-            server.get(
-                "temperature",
-                0
-            )
+        rows.append(
+            {
+                "Server": f"Server {sid}",
+                "Wokwi Temperature (°C)": round(temp, 2),
+                "Predicted Temperature (°C)": round(predicted, 2),
+                "Status": temperature_status(temp),
+                "Hotspot": hotspot_status(server),
+                "Cooling": "ON" if cooling else "OFF",
+                "Protection": protection_status(temp),
+            }
         )
-
-
-        predicted = float(
-            server.get(
-                "predicted_temperature",
-                temp
-            )
-        )
-
-
-        cooling = bool(
-            server.get(
-                "cooling_active",
-                False
-            )
-        )
-
-
-        rows.append({
-
-            "Server":
-            f"Server {sid}",
-
-            "Wokwi Temperature (°C)":
-            round(
-                temp,
-                2
-            ),
-
-            "Predicted Temperature (°C)":
-            round(
-                predicted,
-                2
-            ),
-
-            "Status":
-            temperature_status(
-                temp
-            ),
-
-            "Hotspot":
-            hotspot_status(
-                server
-            ),
-
-            "Cooling":
-            "ON"
-            if cooling
-            else
-            "OFF",
-
-            "Protection":
-            protection_status(
-                temp
-            )
-
-        })
-
 
     st.dataframe(
-
-        pd.DataFrame(
-            rows
-        ),
-
+        pd.DataFrame(rows),
         use_container_width=True,
-
-        hide_index=True
-
+        hide_index=True,
     )
 
-
-    # ========================================================
+    # --------------------------------------------------------
     # SERVER DETAIL
-    # ========================================================
+    # --------------------------------------------------------
 
     st.markdown(
-        "## 🔍 Server Detail Analysis"
+        '<div class="section-title">🔍 Server Detail Analysis</div>',
+        unsafe_allow_html=True,
     )
-
 
     server_ids = [
-
-        int(
-            server.get(
-                "server_id",
-                i + 1
-            )
-        )
-
-        for i, server
-        in enumerate(servers)
-
+        int(server.get("server_id", i + 1))
+        for i, server in enumerate(servers)
     ]
 
-
     selected_server_id = st.selectbox(
-
         "Select Server",
-
-        server_ids
-
+        server_ids,
+        key="server_selector",
     )
 
-
-    selected_server = None
-
-
-    for server in servers:
-
-        if int(
-
-            server.get(
-                "server_id",
-                0
-            )
-
-        ) == selected_server_id:
-
-            selected_server = server
-
-            break
-
+    selected_server = next(
+        (
+            server
+            for server in servers
+            if int(server.get("server_id", 0))
+            == selected_server_id
+        ),
+        None,
+    )
 
     if selected_server is not None:
-
-        result = predict_server(
-            selected_server
+        result, feature_df = predict_server(
+            selected_server,
+            models,
         )
 
+        features = feature_df.iloc[0]
 
-        features = build_features(
-            selected_server
-        ).iloc[0]
-
-
-        st.markdown(
-            f"### Server {selected_server_id}"
+        current_temp = safe_float(
+            selected_server.get("temperature", 0)
         )
 
+        st.markdown(f"### Server {selected_server_id:02d}")
 
-        x1, x2, x3, x4 = st.columns(4)
+        d1, d2, d3, d4 = st.columns(4)
 
-
-        x1.metric(
+        d1.metric(
             "Current Wokwi Temperature",
-            f'{selected_server.get("temperature", 0):.2f} °C'
+            f"{current_temp:.2f} °C",
         )
 
-
-        x2.metric(
+        d2.metric(
             "AI Future GPU Temperature",
-            f'{result["future_temp"]:.2f} °C'
+            f"{result['model1']:.2f} °C",
         )
 
-
-        x3.metric(
-            "AI Required Fan Speed",
-            f'{result["required_fan"]:.1f}%'
+        d3.metric(
+            "AI Required Fan",
+            f"{result['model2']:.1f}%",
         )
 
-
-        x4.metric(
+        d4.metric(
             "AI Hotspot Risk",
-            f'{result["hotspot_risk"]:.1f}%'
+            f"{result['model3']:.1f}%",
         )
 
-
         # ----------------------------------------------------
-        # ML INPUTS
+        # ORIGINAL 11 PARAMETERS
         # ----------------------------------------------------
 
-        st.markdown(
-            "### 📊 ML Input Parameters"
-        )
-
+        st.markdown("### 📊 ML Input Parameters")
 
         st.caption(
-            "Temperature comes directly from Wokwi. "
-            "The remaining ML inputs are estimated from the "
-            "live temperature for this demonstration."
+            "Wokwi directly measures GPU/server temperature. "
+            "The other parameters are estimated from the live "
+            "temperature for this simulation."
         )
-
 
         p1, p2, p3, p4 = st.columns(4)
 
-
         p1.metric(
             "GPU Usage",
-            f'{features["GPU_usage_percent"]:.1f}%'
+            f"{features['GPU_usage_percent']:.1f}%",
         )
-
 
         p2.metric(
             "GPU Power",
-            f'{features["GPU_power_W"]:.1f} W'
+            f"{features['GPU_power_W']:.1f} W",
         )
-
 
         p3.metric(
             "CPU Usage",
-            f'{features["CPU_usage_percent"]:.1f}%'
+            f"{features['CPU_usage_percent']:.1f}%",
         )
-
 
         p4.metric(
             "CPU Temperature",
-            f'{features["CPU_temperature_C"]:.1f} °C'
+            f"{features['CPU_temperature_C']:.1f} °C",
         )
-
 
         p5, p6, p7, p8 = st.columns(4)
 
-
         p5.metric(
-            "Ambient",
-            f'{features["ambient_temperature_C"]:.1f} °C'
+            "GPU Temperature",
+            f"{features['GPU_temperature_C']:.1f} °C",
         )
-
 
         p6.metric(
-            "Inlet",
-            f'{features["inlet_temperature_C"]:.1f} °C'
+            "Ambient",
+            f"{features['ambient_temperature_C']:.1f} °C",
         )
-
 
         p7.metric(
-            "Outlet",
-            f'{features["outlet_temperature_C"]:.1f} °C'
+            "Inlet",
+            f"{features['inlet_temperature_C']:.1f} °C",
         )
-
 
         p8.metric(
-            "Airflow",
-            f'{features["airflow_m3_s"]:.2f} m³/s'
+            "Outlet",
+            f"{features['outlet_temperature_C']:.1f} °C",
         )
 
-
-        p9, p10 = st.columns(2)
-
+        p9, p10, p11 = st.columns(3)
 
         p9.metric(
-            "Workload",
-            f'{features["workload_percent"]:.1f}%'
+            "Fan Speed",
+            f"{features['fan_speed_percent']:.1f}%",
         )
-
 
         p10.metric(
-            "Fan Speed",
-            f'{features["fan_speed_percent"]:.1f}%'
+            "Airflow",
+            f"{features['airflow_m3_s']:.2f} m³/s",
         )
 
-
-        # ----------------------------------------------------
-        # AI RESULTS
-        # ----------------------------------------------------
-
-        st.markdown(
-            "### 🤖 AI Prediction Results"
+        p11.metric(
+            "Workload",
+            f"{features['workload_percent']:.1f}%",
         )
 
+        # ----------------------------------------------------
+        # MODEL RESULTS
+        # ----------------------------------------------------
+
+        st.markdown("### 🤖 AI Prediction Results")
 
         r1, r2, r3, r4, r5 = st.columns(5)
 
-
         r1.metric(
-            "Model 1",
-            f'{result["future_temp"]:.2f} °C'
+            "Model 1 — Future Temp",
+            f"{result['model1']:.2f} °C",
         )
-
 
         r2.metric(
-            "Model 2",
-            f'{result["required_fan"]:.1f}%'
+            "Model 2 — Required Fan",
+            f"{result['model2']:.1f}%",
         )
-
 
         r3.metric(
-            "Model 3",
-            f'{result["hotspot_risk"]:.1f}%'
+            "Model 3 — Hotspot Risk",
+            f"{result['model3']:.1f}%",
         )
-
 
         r4.metric(
-            "Model 4",
-            f'{result["cooling_effectiveness"]:.1f}%'
+            "Model 4 — Cooling",
+            f"{result['model4']:.1f}%",
         )
-
 
         r5.metric(
-            "Model 5",
-            "WARNING"
-            if result["warning"]
-            else "NORMAL"
+            "Model 5 — Warning",
+            "WARNING" if result["model5"] else "NORMAL",
         )
-
 
         # ----------------------------------------------------
-        # AI EXPLANATION
+        # EXPLANATION
         # ----------------------------------------------------
 
-        st.markdown(
-            "### 🧠 AI Explanation"
-        )
-
-
-        current_temp = float(
-            selected_server.get(
-                "temperature",
-                0
-            )
-        )
-
+        st.markdown("### 🧠 AI Explanation")
 
         if current_temp >= CRITICAL_TEMP:
-
             st.error(
-                "The Wokwi server temperature is in the "
-                "critical range. Cooling protection should "
-                "remain active."
+                "The Wokwi server is in the critical temperature range. "
+                "The dashboard marks this as a critical hotspot and "
+                "keeps the protection state active."
             )
-
 
         elif current_temp >= WARNING_TEMP:
-
             st.warning(
-                "The Wokwi server temperature is in the "
-                "high-temperature range. The system identifies "
-                "this as a hotspot/high thermal-stress condition."
+                "The Wokwi server is in the high-temperature range. "
+                "The system identifies this as a hotspot/high thermal-stress condition."
             )
 
-
-        elif result["future_temp"] >= SAFE_TEMP:
-
+        elif result["model1"] >= SAFE_TEMP:
             st.info(
-                "The AI model predicts that the server may "
-                "approach the hotspot threshold."
+                "The AI model predicts that the server may approach "
+                "the monitored hotspot threshold."
             )
-
 
         else:
-
             st.success(
-                "The current Wokwi temperature is within "
-                "the monitored safe range."
+                "The current Wokwi temperature and AI prediction are "
+                "within the monitored range."
             )
 
-
-    # ========================================================
+    # --------------------------------------------------------
     # ANALYTICS
-    # ========================================================
+    # --------------------------------------------------------
 
     st.markdown(
-        "## 📈 Real-Time Analytics"
+        '<div class="section-title">📈 Real-Time Analytics</div>',
+        unsafe_allow_html=True,
     )
-
 
     chart_rows = []
 
-
     for server in servers:
+        sid = int(server.get("server_id", 0))
+        temp = safe_float(server.get("temperature", 0))
 
-        sid = int(
-            server.get(
-                "server_id",
-                0
-            )
+        result, _ = predict_server(
+            server,
+            models,
         )
 
-
-        temp = float(
-            server.get(
-                "temperature",
-                0
-            )
+        chart_rows.append(
+            {
+                "Server": f"Server {sid}",
+                "Temperature": temp,
+                "Prediction": safe_float(
+                    server.get(
+                        "predicted_temperature",
+                        result["model1"],
+                    )
+                ),
+                "Risk": result["model3"],
+                "Cooling": result["model4"],
+            }
         )
 
+    chart_df = pd.DataFrame(chart_rows)
 
-        result = predict_server(
-            server
-        )
-
-
-        chart_rows.append({
-
-            "Server":
-            f"Server {sid}",
-
-            "Temperature":
-            temp,
-
-            "Risk":
-            result["hotspot_risk"],
-
-            "Cooling":
-            result[
-                "cooling_effectiveness"
-            ]
-
-        })
-
-
-    chart_df = pd.DataFrame(
-        chart_rows
-    )
-
-
-    # --------------------------------------------------------
     # Temperature chart
-    # --------------------------------------------------------
-
     fig1 = go.Figure()
 
+    fig1.add_trace(
+        go.Bar(
+            x=chart_df["Server"],
+            y=chart_df["Temperature"],
+            name="Current",
+        )
+    )
 
     fig1.add_trace(
-
-        go.Bar(
-
+        go.Scatter(
             x=chart_df["Server"],
-
-            y=chart_df["Temperature"],
-
-            name="Temperature"
-
+            y=chart_df["Prediction"],
+            name="AI Next Prediction",
+            mode="lines+markers",
         )
-
     )
 
-
     fig1.add_hline(
-
         y=SAFE_TEMP,
-
         line_dash="dash",
-
-        annotation_text="Safe"
-
+        annotation_text="Safe 35°C",
     )
 
-
     fig1.add_hline(
-
         y=WARNING_TEMP,
-
         line_dash="dash",
-
-        annotation_text="Warning"
-
+        annotation_text="Warning 40°C",
     )
-
 
     fig1.add_hline(
-
         y=CRITICAL_TEMP,
-
         line_dash="dash",
-
-        annotation_text="Critical"
-
+        annotation_text="Critical 50°C",
     )
-
 
     fig1.update_layout(
-
-        title="Current Wokwi Server Temperatures",
-
+        title="Live Wokwi Temperature vs AI Prediction",
         template="plotly_dark",
-
-        height=400,
-
+        height=430,
         xaxis_title="Server",
-
-        yaxis_title="Temperature (°C)"
-
+        yaxis_title="Temperature (°C)",
     )
-
 
     st.plotly_chart(
-
         fig1,
-
-        use_container_width=True
-
+        use_container_width=True,
     )
 
-
-    # --------------------------------------------------------
     # Risk chart
-    # --------------------------------------------------------
-
     fig2 = go.Figure()
 
-
     fig2.add_trace(
-
         go.Bar(
-
             x=chart_df["Server"],
-
             y=chart_df["Risk"],
-
-            name="Hotspot Risk"
-
+            name="Hotspot Risk",
         )
-
     )
-
 
     fig2.update_layout(
-
         title="AI Hotspot Risk",
-
         template="plotly_dark",
-
         height=400,
-
         xaxis_title="Server",
-
         yaxis_title="Risk (%)",
-
-        yaxis_range=[
-            0,
-            100
-        ]
-
+        yaxis_range=[0, 100],
     )
-
 
     st.plotly_chart(
-
         fig2,
-
-        use_container_width=True
-
+        use_container_width=True,
     )
 
-
-    # --------------------------------------------------------
-    # Cooling effectiveness
-    # --------------------------------------------------------
-
+    # Cooling chart
     fig3 = go.Figure()
 
-
     fig3.add_trace(
-
         go.Bar(
-
             x=chart_df["Server"],
-
             y=chart_df["Cooling"],
-
-            name="Cooling Effectiveness"
-
+            name="Cooling Effectiveness",
         )
-
     )
-
 
     fig3.update_layout(
-
         title="AI Cooling Effectiveness",
-
         template="plotly_dark",
-
         height=400,
-
         xaxis_title="Server",
-
         yaxis_title="Effectiveness (%)",
-
-        yaxis_range=[
-            0,
-            100
-        ]
-
+        yaxis_range=[0, 100],
     )
-
 
     st.plotly_chart(
-
         fig3,
-
-        use_container_width=True
-
+        use_container_width=True,
     )
 
-
-    # ========================================================
+    # --------------------------------------------------------
     # MODEL PERFORMANCE
-    # ========================================================
+    # --------------------------------------------------------
 
     st.markdown(
-        "## 📊 Model Performance"
+        '<div class="section-title">📊 Model Performance</div>',
+        unsafe_allow_html=True,
     )
 
+    performance_rows = []
 
-    performance = pd.DataFrame([
+    for key, bundle in models.items():
+        metrics = bundle["metrics"]
 
-        {
-
-            "Model":
-            "Model 1 - Future GPU Temperature",
-
-            "R²":
-            models[
-                "model1_metrics"
-            ]["R2"],
-
-            "MAE":
-            models[
-                "model1_metrics"
-            ]["MAE"],
-
-            "RMSE":
-            models[
-                "model1_metrics"
-            ]["RMSE"]
-
-        },
-
-        {
-
-            "Model":
-            "Model 2 - Required Fan Speed",
-
-            "R²":
-            models[
-                "model2_metrics"
-            ]["R2"],
-
-            "MAE":
-            models[
-                "model2_metrics"
-            ]["MAE"],
-
-            "RMSE":
-            models[
-                "model2_metrics"
-            ]["RMSE"]
-
-        },
-
-        {
-
-            "Model":
-            "Model 3 - Hotspot Risk",
-
-            "R²":
-            models[
-                "model3_metrics"
-            ]["R2"],
-
-            "MAE":
-            models[
-                "model3_metrics"
-            ]["MAE"],
-
-            "RMSE":
-            models[
-                "model3_metrics"
-            ]["RMSE"]
-
-        },
-
-        {
-
-            "Model":
-            "Model 4 - Cooling Effectiveness",
-
-            "R²":
-            models[
-                "model4_metrics"
-            ]["R2"],
-
-            "MAE":
-            models[
-                "model4_metrics"
-            ]["MAE"],
-
-            "RMSE":
-            models[
-                "model4_metrics"
-            ]["RMSE"]
-
+        row = {
+            "Model": bundle["name"],
+            "Target": bundle["target"],
+            "Rows": metrics["rows"],
         }
 
-    ])
+        if bundle["kind"] == "classification":
+            row["Accuracy"] = round(metrics["Accuracy"], 4)
+            row["R²"] = None
+            row["MAE"] = None
+            row["RMSE"] = None
+        else:
+            row["Accuracy"] = None
+            row["R²"] = round(metrics["R2"], 4)
+            row["MAE"] = round(metrics["MAE"], 4)
+            row["RMSE"] = round(metrics["RMSE"], 4)
 
+        performance_rows.append(row)
 
     st.dataframe(
-
-        performance,
-
+        pd.DataFrame(performance_rows),
         use_container_width=True,
-
-        hide_index=True
-
+        hide_index=True,
     )
 
 
 # ============================================================
-# START DASHBOARD
+# START
 # ============================================================
 
 realtime_dashboard()
-
