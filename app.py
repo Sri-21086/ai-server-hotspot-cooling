@@ -588,7 +588,7 @@ MODEL_SPECS = {
             "Temperature Rise C",
         ],
         "target": "Hotspot Risk",
-        "kind": "regression",
+        "kind": "classification",
         "name": "Hotspot Risk",
     },
     "model4": {
@@ -660,23 +660,41 @@ def train_one_regressor(df, features, target):
 
 
 def train_classifier(df, features, target):
-    X = df[features].apply(pd.to_numeric, errors="coerce")
-    y = pd.to_numeric(df[target], errors="coerce")
+    # Some of the supplied classification datasets use text labels
+    # such as Low/Medium/High and Normal/Warning/Critical.  Encode
+    # those labels explicitly instead of trying to convert them to NaN.
+    X = df[features].copy()
+    y = df[target].astype(str).str.strip()
 
-    valid = X.notna().all(axis=1) & y.notna()
+    feature_maps = {}
 
+    for feature in features:
+        if pd.api.types.is_numeric_dtype(X[feature]):
+            X[feature] = pd.to_numeric(X[feature], errors="coerce")
+        else:
+            values = X[feature].astype(str).str.strip()
+            classes = sorted(values.dropna().unique().tolist())
+            mapping = {label: i for i, label in enumerate(classes)}
+            feature_maps[feature] = mapping
+            X[feature] = values.map(mapping)
+
+    target_classes = sorted(y.dropna().unique().tolist())
+    target_map = {label: i for i, label in enumerate(target_classes)}
+    y_encoded = y.map(target_map)
+
+    valid = X.notna().all(axis=1) & y_encoded.notna()
     X = X.loc[valid]
-    y = y.loc[valid].astype(int)
+    y_encoded = y_encoded.loc[valid].astype(int)
 
     if len(X) < 10:
         raise ValueError(f"Not enough valid rows for target '{target}'.")
 
     X_train, X_test, y_train, y_test = train_test_split(
         X,
-        y,
+        y_encoded,
         test_size=0.20,
         random_state=42,
-        stratify=y if y.nunique() > 1 else None,
+        stratify=y_encoded if y_encoded.nunique() > 1 else None,
     )
 
     model = RandomForestClassifier(
@@ -687,7 +705,6 @@ def train_classifier(df, features, target):
     )
 
     model.fit(X_train, y_train)
-
     pred = model.predict(X_test)
 
     metrics = {
@@ -695,7 +712,7 @@ def train_classifier(df, features, target):
         "rows": int(len(X)),
     }
 
-    return model, metrics
+    return model, metrics, feature_maps, target_classes
 
 
 @st.cache_resource
@@ -720,8 +737,11 @@ def train_models():
                 + ", ".join(missing)
             )
 
+        feature_maps = {}
+        target_classes = None
+
         if spec["kind"] == "classification":
-            model, metrics = train_classifier(
+            model, metrics, feature_maps, target_classes = train_classifier(
                 df,
                 spec["features"],
                 spec["target"],
@@ -740,6 +760,8 @@ def train_models():
             "target": spec["target"],
             "kind": spec["kind"],
             "name": spec["name"],
+            "feature_maps": feature_maps,
+            "target_classes": target_classes,
         }
 
     return trained
@@ -865,19 +887,45 @@ def predict_server(server, models):
     results = {}
 
     for key, bundle in models.items():
-        row = pd.DataFrame(
-            [
-                {
-                    feature: inputs[feature]
-                    for feature in bundle["features"]
-                }
-            ]
-        )
+        row_values = {}
 
+        for feature in bundle["features"]:
+            value = inputs[feature]
+            mapping = bundle.get("feature_maps", {}).get(feature)
+
+            if mapping is not None:
+                # Model 5 uses the dataset's Low/Medium/High hotspot labels.
+                # Convert the live numeric risk into the same labels.
+                if feature == "Hotspot Risk" and isinstance(value, (int, float)):
+                    if float(value) < 33.0:
+                        value = "Low"
+                    elif float(value) < 66.0:
+                        value = "Medium"
+                    else:
+                        value = "High"
+
+                value = mapping.get(str(value).strip())
+
+            row_values[feature] = value
+
+        row = pd.DataFrame([row_values])
         value = bundle["model"].predict(row)[0]
 
         if bundle["kind"] == "classification":
-            results[key] = int(value)
+            classes = bundle.get("target_classes") or []
+            label = classes[int(value)] if int(value) < len(classes) else str(value)
+
+            if key == "model3":
+                risk_map = {
+                    "Low": 20.0,
+                    "Medium": 55.0,
+                    "High": 90.0,
+                }
+                results[key] = risk_map.get(label, 50.0)
+            elif key == "model5":
+                results[key] = 0 if label == "Normal" else 1
+            else:
+                results[key] = int(value)
         else:
             results[key] = float(value)
 
