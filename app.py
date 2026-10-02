@@ -286,6 +286,28 @@ h1, h2, h3, h4, h5, h6 {
     margin: 18px 0 10px 0;
 }
 
+.disconnect-panel {
+    background: linear-gradient(135deg, rgba(35, 44, 58, 0.96), rgba(17, 23, 32, 0.96));
+    border: 1px solid rgba(150, 165, 185, 0.18);
+    border-radius: 18px;
+    padding: 38px;
+    margin-top: 24px;
+    text-align: center;
+}
+
+.disconnect-title {
+    color: #dbe4ef;
+    font-size: 1.5rem;
+    font-weight: 900;
+}
+
+.disconnect-text {
+    color: #91a0b2;
+    margin-top: 9px;
+    font-size: 0.95rem;
+    line-height: 1.6;
+}
+
 div[data-testid="stButton"] > button {
     border-radius: 12px;
     font-weight: 800;
@@ -525,11 +547,17 @@ class MQTTState:
         return True
 
     def disconnect(self):
+        """Stop MQTT completely and clear all live telemetry."""
         with self.lock:
             self.desired_connection = False
             self.stop_event.set()
             self.connected = False
             self.connecting = False
+            self.latest_data = None
+            self.last_update = None
+            self.last_payload = ""
+            self.message_count = 0
+            self.connection_error = None
 
         try:
             self.client.disconnect()
@@ -539,6 +567,9 @@ class MQTTState:
         thread = self.worker_thread
         if thread is not None and thread.is_alive():
             thread.join(timeout=2.0)
+
+        with self.lock:
+            self.worker_thread = None
 
     def get_data(self):
         with self.lock:
@@ -590,9 +621,15 @@ def mqtt_is_connecting(state):
         except Exception:
             pass
     return bool(getattr(state, "connecting", False))
-# Start the persistent MQTT listener automatically. The CONNECT button below
-# remains available to restart it after a manual disconnect.
-mqtt_state.connect()
+# ------------------------------------------------------------
+# MQTT OPERATION STATE
+# ------------------------------------------------------------
+# CONNECT / DISCONNECT controls the complete live operation.
+# The first page load starts in a stopped/disconnected state.
+st.session_state.setdefault("mqtt_enabled", False)
+
+if st.session_state["mqtt_enabled"]:
+    mqtt_state.connect()
 
 
 # ============================================================
@@ -1085,17 +1122,22 @@ with st.sidebar:
 
     st.divider()
 
-    # Keep the control visible at all times. The listener also auto-starts
-    # so the dashboard does not depend on a single button click.
+    # CONNECT starts the complete live operation.
     if st.button("🔌 CONNECT / RECONNECT", use_container_width=True):
+        st.session_state["mqtt_enabled"] = True
         mqtt_state.connect()
         st.rerun()
 
+    # DISCONNECT stops MQTT, clears live telemetry, and removes the
+    # auto-refresh fragment on the following full rerun.
     if st.button("🔴 DISCONNECT", use_container_width=True):
+        st.session_state["mqtt_enabled"] = False
         mqtt_state.disconnect()
         st.rerun()
 
-    if mqtt_state.is_connected():
+    if not st.session_state["mqtt_enabled"]:
+        st.info("⏸️ SYSTEM DISCONNECTED — live MQTT + auto-refresh stopped")
+    elif mqtt_state.is_connected():
         st.success("🟢 MQTT CONNECTED — listening continuously")
     elif mqtt_is_connecting(mqtt_state):
         st.info("🔄 MQTT CONNECTING / RECONNECTING…")
@@ -1105,8 +1147,16 @@ with st.sidebar:
     st.divider()
 
     st.write("Servers: 4")
-    st.write("UI refresh: 1 second")
-    st.write("MQTT listener: continuous")
+    st.write(
+        "UI refresh: 1 second while connected"
+        if st.session_state["mqtt_enabled"]
+        else "UI refresh: STOPPED"
+    )
+    st.write(
+        "MQTT listener: continuous while connected"
+        if st.session_state["mqtt_enabled"]
+        else "MQTT listener: STOPPED"
+    )
 
     st.divider()
 
@@ -1117,13 +1167,13 @@ with st.sidebar:
 
     last_update = mqtt_state.get_last_update()
 
-    if last_update is not None:
+    if st.session_state["mqtt_enabled"] and last_update is not None:
         age = max(0.0, time.time() - last_update)
         st.caption(f"Last Wokwi message: {age:.1f}s ago")
 
     error = mqtt_state.get_error()
 
-    if error:
+    if error and st.session_state["mqtt_enabled"]:
         st.error(error)
 
     st.divider()
@@ -1182,6 +1232,11 @@ if model_error:
 
 @st.fragment(run_every=1)
 def realtime_dashboard():
+
+    # Safety guard for the transition immediately after DISCONNECT.
+    # No MQTT/ML work is performed while the live operation is disabled.
+    if not st.session_state.get("mqtt_enabled", False):
+        return
 
     data = mqtt_state.get_data()
 
@@ -1754,4 +1809,22 @@ def realtime_dashboard():
 # START
 # ============================================================
 
-realtime_dashboard()
+if st.session_state.get("mqtt_enabled", False):
+    # The fragment is rendered only during the live operation.
+    # After DISCONNECT triggers st.rerun(), this block is skipped, so the
+    # 1-second fragment refresh is no longer scheduled.
+    realtime_dashboard()
+else:
+    st.markdown(
+        """
+<div class="disconnect-panel">
+    <div class="disconnect-title">⏸️ SYSTEM DISCONNECTED</div>
+    <div class="disconnect-text">
+        MQTT listener stopped. Live Wokwi telemetry, ML processing, and
+        automatic dashboard refresh are paused. Click CONNECT / RECONNECT
+        to resume the complete live operation.
+    </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
