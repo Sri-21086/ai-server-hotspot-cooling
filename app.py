@@ -572,11 +572,24 @@ class MQTTState:
 
 
 @st.cache_resource
-def get_mqtt_state():
+def get_mqtt_state(cache_version="v4"):
+    # Changing cache_version forces Streamlit Cloud to create a fresh MQTTState
+    # instead of reusing an object created by an older app.py version.
     return MQTTState()
 
 
-mqtt_state = get_mqtt_state()
+mqtt_state = get_mqtt_state("v4")
+
+
+def mqtt_is_connecting(state):
+    """Compatibility helper for cached MQTTState objects from older deployments."""
+    method = getattr(state, "is_connecting", None)
+    if callable(method):
+        try:
+            return bool(method())
+        except Exception:
+            pass
+    return bool(getattr(state, "connecting", False))
 # Start the persistent MQTT listener automatically. The CONNECT button below
 # remains available to restart it after a manual disconnect.
 mqtt_state.connect()
@@ -1084,7 +1097,7 @@ with st.sidebar:
 
     if mqtt_state.is_connected():
         st.success("🟢 MQTT CONNECTED — listening continuously")
-    elif mqtt_state.is_connecting():
+    elif mqtt_is_connecting(mqtt_state):
         st.info("🔄 MQTT CONNECTING / RECONNECTING…")
     else:
         st.warning("🟡 MQTT NOT CONNECTED")
@@ -1202,7 +1215,7 @@ def realtime_dashboard():
             f"(packet #{msg_count}, {age:.1f}s ago)"
         )
         live_class = "live-dot"
-    elif mqtt_state.is_connecting():
+    elif mqtt_is_connecting(mqtt_state):
         live_text = "🔄 CONNECTING — waiting for MQTT packets from Wokwi"
         live_class = "live-dot"
     elif age is not None:
